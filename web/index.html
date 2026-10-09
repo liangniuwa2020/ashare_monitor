@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A股全息信息收集与监控系统 - 量化龙头作战看板</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header>
+        <div class="logo-box">
+            <span class="logo-badge">PRO QUANT</span>
+            <div>
+                <div class="logo-title">A股市场全息监控与龙头投研作战中心</div>
+                <div class="logo-subtitle">数据分层架构 · 东方财富全量行情 · 雪球/股吧舆情 · 果仁多因子模型</div>
+            </div>
+        </div>
+        <div class="header-status">
+            <!-- 模块功能切换导航 -->
+            <div style="display: flex; gap: 8px; margin-right: 12px;">
+                <button class="primary-btn" id="nav-btn-cockpit" onclick="switchMainView('cockpit')">📊 市场监控看板</button>
+                <button class="chart-tab-btn" id="nav-btn-guorn" onclick="switchMainView('guorn')">🧭 果仁市场风向标与情绪择时</button>
+                <button class="chart-tab-btn" id="nav-btn-valuation" onclick="switchMainView('valuation')">📈 板块历史PB/PE多板块对比</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #94a3b8">
+                <span class="pulse-dot"></span>
+                <span>实时状态: 监控运转中 (更新: <span id="last-update-time">--:--:--</span>)</span>
+            </div>
+            <button class="refresh-btn" id="refresh-action-btn" onclick="refreshAllData()">
+                🔄 全量抓取与分析
+            </button>
+        </div>
+    </header>
+
+    <!-- 主视图 1: 市场监控大盘与板块总看板 -->
+    <div class="container" id="view-cockpit">
+        <!-- 0. 【全市场热度板块】全市场历史热度与量能情绪走势 (置于页首) -->
+        <div class="card-box" id="market-heat-box" style="border: 1px solid #3b82f6; background: radial-gradient(circle at top right, #172554 0%, #111827 80%);">
+            <div class="section-head" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <div class="section-title">
+                        <span style="font-size: 19px;">🔥 全市场综合热度与情绪量能历史走势</span>
+                        <span class="tag tag-gold" id="current-heat-tag">当前热度: --</span>
+                        <span id="heat-chart-range-badge" style="font-size:12px; color:#38bdf8; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.3); padding:2px 8px; border-radius:4px;">(历史时间轴)</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 3px;">
+                        量化维度：成交量能扩缩 · 赚钱效应广度 · 连板高度溢价 · 社区舆情热议度 · 点击任意点位查看横轴历史百分位
+                    </div>
+                </div>
+
+                <!-- 历史时间轴与周期控制栏 -->
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <div style="display:flex; gap:5px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">时间周期:</span>
+                        <button class="chart-tab-btn active" id="heat-period-day" onclick="switchMarketHeatPeriod('day')">日线 (近5年)</button>
+                        <button class="chart-tab-btn" id="heat-period-week" onclick="switchMarketHeatPeriod('week')">周线 (近10年)</button>
+                        <button class="chart-tab-btn" id="heat-period-month" onclick="switchMarketHeatPeriod('month')">月线 (近20年)</button>
+                        <button class="chart-tab-btn" id="heat-period-year" onclick="switchMarketHeatPeriod('year')">年线 (全历史)</button>
+                    </div>
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">快捷缩放:</span>
+                        <button class="chart-tab-btn" onclick="zoomMarketHeatFast('half_year')">近半年</button>
+                        <button class="chart-tab-btn" onclick="zoomMarketHeatFast('1_year')">近1年</button>
+                        <button class="chart-tab-btn" onclick="zoomMarketHeatFast('3_year')">近3年</button>
+                        <button class="chart-tab-btn active" id="btn-heat-zoom-all" onclick="zoomMarketHeatFast('all')">全部</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 热度指标关键数据卡片 -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px;" id="heat-metrics-summary">
+                <div class="stat-metric-card">
+                    <span style="font-size:12px; color:#94a3b8">全市场热度指数</span>
+                    <span style="font-size:24px; font-weight:800; color:#ef4444" id="metric-heat-val">--</span>
+                    <span style="font-size:11px; color:#38bdf8" id="metric-heat-level">状态评估中...</span>
+                </div>
+                <div class="stat-metric-card">
+                    <span style="font-size:12px; color:#94a3b8">交投量能热度分</span>
+                    <span style="font-size:24px; font-weight:800; color:#f59e0b" id="metric-volume-val">--</span>
+                    <span style="font-size:11px; color:#94a3b8">全市场交投活跃度</span>
+                </div>
+                <div class="stat-metric-card">
+                    <span style="font-size:12px; color:#94a3b8">赚钱效应得分</span>
+                    <span style="font-size:24px; font-weight:800; color:#10b981" id="metric-price-val">--</span>
+                    <span style="font-size:11px; color:#94a3b8">多空分歧与涨跌比</span>
+                </div>
+                <div class="stat-metric-card">
+                    <span style="font-size:12px; color:#94a3b8">基准指数走势</span>
+                    <span style="font-size:24px; font-weight:800; color:#e2e8f0" id="metric-index-val">--</span>
+                    <span style="font-size:11px;" id="metric-index-chg">--</span>
+                </div>
+            </div>
+
+            <!-- 点位点击与历史百分位详细分析卡片 (动态注入) -->
+            <div id="heat-point-detail-box" style="display:none; margin-bottom: 14px; padding: 14px 18px; background: rgba(15, 23, 42, 0.95); border: 1px solid #38bdf8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);">
+                <!-- 点击任意点位展示相对横轴数据的历史百分位分析 -->
+            </div>
+
+            <!-- 全市场历史热度 ECharts 交互时序图 -->
+            <div id="market-heat-chart" style="width: 100%; height: 380px;"></div>
+        </div>
+
+        <!-- 1. 宏观指数与市场情绪状态栏 -->
+        <div class="indices-bar" id="indices-bar">
+            <!-- 动态填充指数与情绪看板 -->
+        </div>
+
+        <!-- 2. 全市场总龙头、龙1、龙2 旗舰梯队 -->
+        <div class="leaders-banner">
+            <div class="section-head">
+                <div class="section-title">
+                    <span>👑 全市场最高梯队：总龙头 / 龙1 / 龙2 定位模型</span>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8">
+                    判定维度：开板次数 · 首次封板时间 · 连板高度 · 换手承接比 · 情绪总旗手
+                </div>
+            </div>
+            <div class="leader-grid" id="market-leaders-grid">
+                <!-- 动态填充全市场总龙头 -->
+            </div>
+        </div>
+
+        <!-- 2.5 全市场最热点个股榜单 (按全网市场热点与人气严格排列) -->
+        <div class="card-box">
+            <div class="section-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                    <div class="section-title">
+                        <span>🔥 全市场最热点个股榜单 (全网人气热榜 · 市场焦点风向标)</span>
+                        <span class="tag tag-gold" id="hot-stocks-total-tag">前200只实时监控</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top:2px;">
+                        整合东财全网人气榜、新浪交投龙头与盘口异动 · 每页呈现25只 · 穿透点击任意股票直接调出分时与多周期K线
+                    </div>
+                </div>
+                <!-- 分页控制栏 (顶部快捷) -->
+                <div id="hot-stocks-pagination-top" style="display:flex; align-items:center; gap:8px;"></div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>全网热度</th>
+                            <th>股票代码</th>
+                            <th>股票名称</th>
+                            <th>所属行业板块</th>
+                            <th>最新价</th>
+                            <th>今日涨跌幅</th>
+                            <th>换手率</th>
+                            <th>成交额</th>
+                            <th>流通市值</th>
+                            <th>全市场热度评分</th>
+                            <th style="min-width:320px; max-width:550px;">人气飙升原因 / 股吧舆情与核心逻辑</th>
+                            <th>人气排名动向</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="market-hot-stocks-tbody">
+                        <!-- 动态填充全市场热点个股 -->
+                    </tbody>
+                </table>
+            </div>
+            <!-- 分页控制栏 (底部) -->
+            <div id="hot-stocks-pagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:12px; border-top:1px solid #1e293b; font-size:13px; color:#94a3b8;">
+            </div>
+        </div>
+
+        <!-- 3. 前20板块可视化分析与盘中异动追踪（两栏布局） -->
+        <div class="grid-2col">
+            <!-- 左侧：前 20 板块深度数据与启动时段 -->
+            <div class="card-box">
+                <div class="section-head">
+                    <div class="section-title">
+                        <span>🔥 每日强势板块 TOP 20 深度透视与启动时段归因</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8">
+                        可点击【涨跌幅】或【成交总额】进行升序/降序排列 · 点击任意板块行穿透查看成分股
+                    </div>
+                </div>
+
+                <!-- 板块强度 ECharts 概览图 -->
+                <div id="sectors-chart" style="width: 100%; height: 260px; margin-bottom: 16px;"></div>
+
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>板块名称</th>
+                                <th style="cursor:pointer; user-select:none;" onclick="sortTop20Sectors('change_percent')" title="点击按涨跌幅排序">
+                                    涨跌幅 <span id="sort-icon-change_percent">⇅</span>
+                                </th>
+                                <th style="cursor:pointer; user-select:none;" onclick="sortTop20Sectors('turnover_amount')" title="点击按成交总额排序">
+                                    成交总额 <span id="sort-icon-turnover_amount">⇅</span>
+                                </th>
+                                <th>启动时间段</th>
+                                <th>板块龙1 (领涨)</th>
+                                <th>板块龙2 (中军)</th>
+                                <th>板块龙3 (助攻)</th>
+                                <th>启动动因归因</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sectors-tbody">
+                            <!-- 动态填充 Top 20 板块 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 右侧：盘中强势板块 & 社区热度情绪 -->
+            <div class="card-box">
+                <div class="tabs-header">
+                    <button class="tab-btn active" id="btn-intraday" onclick="switchTab('intraday')">⚡ 盘中强势板块与龙1/2/3</button>
+                    <button class="tab-btn" id="btn-sentiment" onclick="switchTab('sentiment')">💬 股吧/雪球社区热度榜</button>
+                </div>
+
+                <div id="tab-intraday">
+                    <div id="intraday-strong-list">
+                        <!-- 动态填充盘中强势 -->
+                    </div>
+                </div>
+
+                <div id="tab-sentiment" style="display: none;">
+                    <div id="sentiment-list">
+                        <!-- 动态填充舆情热榜 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 果仁网风格：多因子量化选股与衍生因子池 -->
+        <div class="card-box">
+            <div class="section-head">
+                <div class="section-title">
+                    <span>🧪 果仁网量化多因子策略衍生模型看板</span>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8">
+                    多因子指标：20D/60D动量 · 波动率倒数加权 · PE历史分位数 · 业绩成长 · 复合多因子打分
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>股票代码</th>
+                            <th>股票名称</th>
+                            <th>20日动量因子</th>
+                            <th>60日动量因子</th>
+                            <th>波动率因子</th>
+                            <th>PE分位数 (%)</th>
+                            <th>业绩成长打分</th>
+                            <th>复合多因子评分</th>
+                        </tr>
+                    </thead>
+                    <tbody id="quant-tbody">
+                        <!-- 动态填充果仁多因子数据 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 5. 龙虎榜游资与机构博弈明细 -->
+        <div class="card-box">
+            <div class="section-head">
+                <div class="section-title">
+                    <span>🐉 龙虎榜每日机构与知名游资席位异动明细</span>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8">
+                    监控净买入额前列标的 · 识别机构建仓与短线游资合力迹象
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>交易日期</th>
+                            <th>股票代码</th>
+                            <th>股票名称</th>
+                            <th>收盘价</th>
+                            <th>涨跌幅</th>
+                            <th>龙虎榜净买入</th>
+                            <th>席位买入额</th>
+                            <th>席位卖出额</th>
+                            <th>上榜原因</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dragontiger-tbody">
+                        <!-- 动态填充龙虎榜数据 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主视图 2: 🧭 果仁网市场风向标与量化情绪择时专属板块 (独立一级投研中心) -->
+    <div class="container" id="view-guorn" style="display: none; flex-direction: column; gap: 20px;">
+        <!-- 模块 0: 📈 果仁市场风向标·市场强度指标趋势图 (与果仁网官网 1:1 精确对齐) -->
+        <div class="card-box" id="guorn-official-intensity-box" style="border: 1px solid #38bdf8; background: #0f172a;">
+            <!-- 顶部标题与选项卡导航 (与官网一致) -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:12px; border-bottom:1px solid #1e293b; padding-bottom:8px;">
+                <div style="font-size:18px; font-weight:700; color:#e2e8f0;">
+                    果仁市场风向标 <span style="font-size:12px; color:#94a3b8; font-weight:normal;" id="guorn-vane-latest-date-label">(最新数据日期: --)</span>
+                </div>
+                <div style="font-size:12px; color:#38bdf8; cursor:pointer;" onclick="alert('数据支持导出');">
+                    📥 导出
+                </div>
+            </div>
+
+            <!-- 官网经典分类 Tab -->
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; border-bottom:1px solid #1e293b; padding-bottom:6px;">
+                <button class="chart-tab-btn active" style="background:#1d4ed8; color:#fff; font-weight:bold;">市场强度指标</button>
+                <button class="chart-tab-btn">指数因子</button>
+                <button class="chart-tab-btn">行业因子</button>
+                <button class="chart-tab-btn">指数估值</button>
+                <button class="chart-tab-btn">行业估值</button>
+                <button class="chart-tab-btn">指数景气程度</button>
+                <button class="chart-tab-btn">行业景气程度</button>
+                <button class="chart-tab-btn">解禁市值</button>
+                <button class="chart-tab-btn">指数IC</button>
+                <button class="chart-tab-btn">行业IC</button>
+                <button class="chart-tab-btn">日内风向</button>
+            </div>
+
+            <!-- 控制与查询栏: 投资域选择 + 查询按钮 -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <select id="guorn-domain-select" class="custom-select" style="padding:4px 10px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:4px;" onchange="switchGuornIntensityDomain(this.value)">
+                        <option value="all">全市场</option>
+                        <option value="hs300">沪深300</option>
+                        <option value="zz500">中证500</option>
+                        <option value="cyb">创业板</option>
+                    </select>
+                    <button class="primary-btn" style="padding:4px 14px; font-size:12px;" onclick="loadGuornMarketVane()">查询</button>
+                </div>
+
+                <div style="font-size:12px; color:#94a3b8; display:flex; align-items:center; gap:14px;">
+                    <span style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#2563eb;"></span> 全市场 果仁强度</span>
+                    <span style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:2px; background:#ef4444;"></span> 0轴多空分水岭</span>
+                </div>
+            </div>
+
+            <!-- 果仁市场强度趋势 ECharts 交互大图 (0轴基准，上牛下熊) -->
+            <div id="guorn-intensity-chart" style="width: 100%; height: 340px;"></div>
+
+            <!-- 底部时间缩放与快捷控制栏 (1个月/3个月/6个月/1年/2年/全部) -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid #1e293b;">
+                <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#94a3b8;">
+                    <span>展示区间:</span>
+                    <input type="text" id="guorn-range-start-input" readonly style="width:90px; background:#1e293b; border:1px solid #334155; color:#cbd5e1; padding:2px 6px; font-size:12px; border-radius:3px;" value="2024-09-25">
+                    <span>-</span>
+                    <input type="text" id="guorn-range-end-input" readonly style="width:90px; background:#1e293b; border:1px solid #334155; color:#cbd5e1; padding:2px 6px; font-size:12px; border-radius:3px;" value="2026-09-30">
+                </div>
+
+                <!-- 快捷缩放按钮组 -->
+                <div style="display:flex; align-items:center; gap:4px;">
+                    <button class="chart-tab-btn" onclick="zoomGuornIntensityFast('1m')">1个月</button>
+                    <button class="chart-tab-btn" onclick="zoomGuornIntensityFast('3m')">3个月</button>
+                    <button class="chart-tab-btn" onclick="zoomGuornIntensityFast('6m')">6个月</button>
+                    <button class="chart-tab-btn" onclick="zoomGuornIntensityFast('1y')">1年</button>
+                    <button class="chart-tab-btn active" id="btn-guorn-intensity-2y" onclick="zoomGuornIntensityFast('2y')">2年</button>
+                    <button class="chart-tab-btn" onclick="zoomGuornIntensityFast('all')">全部</button>
+                </div>
+            </div>
+
+            <!-- 官网经典当前强度状态表格摘要 (投资域 / 果仁强度指标 / 市场状态) -->
+            <div style="margin-top:14px;">
+                <table style="width:100%; font-size:13px; text-align:left;">
+                    <thead>
+                        <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                            <th style="padding:8px;">投资域</th>
+                            <th style="padding:8px;">果仁强度指标</th>
+                            <th style="padding:8px;">市场状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="background:rgba(30,41,59,0.5);">
+                            <td style="padding:10px 8px;" id="guorn-table-domain-label">全市场</td>
+                            <td style="padding:10px 8px; font-weight:700; font-size:15px;" id="guorn-table-intensity-val">--</td>
+                            <td style="padding:10px 8px; font-weight:700; font-size:14px;" id="guorn-table-state-val">--</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 模块 A: 🧭 果仁网市场风向标 (风格轮动 · 市场强度 · 因子IC矩阵 · 解禁风控) -->
+        <div class="card-box" id="guorn-vane-box" style="border: 1px solid #8b5cf6; background: radial-gradient(circle at top right, #2e1065 0%, #111827 80%);">
+            <div class="section-head" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <div class="section-title">
+                        <span style="font-size: 20px;">🧭 果仁网市场风向标 (全量量化风向洞察)</span>
+                        <span class="tag tag-purple" id="guorn-vane-intensity-badge">市场强度: --</span>
+                        <span class="tag tag-gold" id="guorn-vane-direction-badge">日内风向: --</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 3px;">
+                        量化雷达体系：以0轴定多空强弱 · 沪深300 vs 中证500大小盘偏向 · 创业板 vs 价值红利偏好 · 5大核心量化因子 Rank IC 胜率矩阵
+                    </div>
+                </div>
+                <div>
+                    <button class="primary-btn" onclick="loadGuornMarketVane(); loadGuornSentiment();">🔄 全量刷新果仁风向数据</button>
+                </div>
+            </div>
+
+            <!-- 市场风向标 3大风格雷达分析卡片 + 解禁风控卡片 -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px;" id="guorn-vane-summary-grid">
+                <!-- 1. 市场强度雷达 -->
+                <div class="stat-metric-card" style="border-left: 3px solid #8b5cf6;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; color:#94a3b8">综合市场强度 (>0强势)</span>
+                        <span style="font-size:11px; color:#c084fc;" id="vane-intensity-state">多头占优</span>
+                    </div>
+                    <div style="font-size:26px; font-weight:800; color:#c084fc; margin:4px 0;" id="vane-intensity-score">--</div>
+                    <div style="font-size:11px; color:#94a3b8;">
+                        0轴多空分水岭 · 强势期做多动量
+                    </div>
+                </div>
+
+                <!-- 2. 大小盘风格偏向 -->
+                <div class="stat-metric-card" style="border-left: 3px solid #38bdf8;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; color:#94a3b8">大小盘风格风向标</span>
+                        <span style="font-size:11px; color:#38bdf8;" id="vane-size-diff">利差: --</span>
+                    </div>
+                    <div style="font-size:16px; font-weight:800; color:#38bdf8; margin:6px 0;" id="vane-size-style">分析中...</div>
+                    <div style="font-size:11px; color:#94a3b8;" id="vane-size-desc">
+                        沪深300 vs 中证500
+                    </div>
+                </div>
+
+                <!-- 3. 成长价值风格偏向 -->
+                <div class="stat-metric-card" style="border-left: 3px solid #ec4899;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; color:#94a3b8">价值 vs 成长风格偏向</span>
+                        <span style="font-size:11px; color:#f472b6;" id="vane-growth-diff">利差: --</span>
+                    </div>
+                    <div style="font-size:16px; font-weight:800; color:#f472b6; margin:6px 0;" id="vane-growth-style">分析中...</div>
+                    <div style="font-size:11px; color:#94a3b8;" id="vane-growth-desc">
+                        创业板指 vs 沪深300
+                    </div>
+                </div>
+
+                <!-- 4. 解禁市值与流动性风控 -->
+                <div class="stat-metric-card" style="border-left: 3px solid #f59e0b;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; color:#94a3b8">解禁市值与流动性风控</span>
+                        <span style="font-size:11px; color:#10b981;" id="vane-lockup-risk">风险中等</span>
+                    </div>
+                    <div style="font-size:18px; font-weight:800; color:#f59e0b; margin:6px 0;" id="vane-lockup-amt">周解禁: 348.5 亿</div>
+                    <div style="font-size:11px; color:#94a3b8;" id="vane-lockup-desc">
+                        月解禁约1420亿，集中于央国企配售
+                    </div>
+                </div>
+            </div>
+
+            <!-- 果仁核心量化因子 IC 表现矩阵表格 -->
+            <div style="margin-bottom: 18px;">
+                <div style="font-size: 13px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px;">
+                    📊 果仁网核心量化因子 Rank IC 有效性矩阵
+                </div>
+                <div class="table-responsive">
+                    <table style="font-size: 13px;">
+                        <thead>
+                            <tr>
+                                <th>果仁量化核心因子</th>
+                                <th>因子归类</th>
+                                <th>Rank IC (信息系数)</th>
+                                <th>IC_IR (稳定性)</th>
+                                <th>月度胜率</th>
+                                <th>当前环境有效性</th>
+                                <th>果仁量化策略指导</th>
+                            </tr>
+                        </thead>
+                        <tbody id="guorn-factors-ic-tbody">
+                            <!-- 动态填充因子 IC 矩阵 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 宽基指数估值水平与重点行业景气度 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <!-- 宽基指数估值跟踪 -->
+                <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="font-size: 13px; font-weight: 700; color: #38bdf8; margin-bottom: 8px;">
+                        📈 宽基指数估值与景气分位跟踪
+                    </div>
+                    <div class="table-responsive">
+                        <table style="font-size: 12px;">
+                            <thead>
+                                <tr>
+                                    <th>指数名称</th>
+                                    <th>市盈率 (PE)</th>
+                                    <th>PE分位</th>
+                                    <th>市净率 (PB)</th>
+                                    <th>股息率</th>
+                                    <th>景气评估</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guorn-index-val-tbody">
+                                <!-- 动态注入指数估值 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 重点行业因子轮动与景气度 -->
+                <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="font-size: 13px; font-weight: 700; color: #a855f7; margin-bottom: 8px;">
+                        🏭 核心行业景气度与因子倾向轮动
+                    </div>
+                    <div class="table-responsive">
+                        <table style="font-size: 12px;">
+                            <thead>
+                                <tr>
+                                    <th>行业板块</th>
+                                    <th>热度分</th>
+                                    <th>优势因子倾向</th>
+                                    <th>趋势走向</th>
+                                    <th>市盈率</th>
+                                    <th>景气状态</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guorn-industry-factors-tbody">
+                                <!-- 动态注入行业因子 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模块 B: 🌡️ 果仁网大盘情绪温度计与量化择时模型 (多因子时序与交互走势) -->
+        <div class="card-box" id="guorn-sentiment-box" style="border: 1px solid #10b981; background: radial-gradient(circle at top left, #064e3b 0%, #111827 80%);">
+            <div class="section-head" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <div class="section-title">
+                        <span style="font-size: 20px;">🌡️ 果仁网大盘情绪温度计与量化择时模型</span>
+                        <span class="tag tag-green" id="guorn-current-temp-tag">情绪温度: --</span>
+                        <span class="tag tag-gold" id="guorn-position-tag">建议仓位: --</span>
+                        <span id="guorn-chart-range-badge" style="font-size:12px; color:#34d399; background:rgba(52,211,153,0.15); border:1px solid rgba(52,211,153,0.3); padding:2px 8px; border-radius:4px;">(择时区间)</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 3px;">
+                        果仁网模式：MA20/60均线多头趋势 · MACD动能柱量化 · 20D动量赚钱效应 · 波动率风险 · 零代码择时仓位映射 (0%~100%)
+                    </div>
+                </div>
+
+                <!-- 指数标的与周期控制栏 -->
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <!-- 观测基准指数 -->
+                    <div style="display:flex; gap:5px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">基准指数:</span>
+                        <button class="chart-tab-btn active" id="guorn-idx-sh000001" onclick="switchGuornIndex('sh000001')">上证指数</button>
+                        <button class="chart-tab-btn" id="guorn-idx-sh000300" onclick="switchGuornIndex('sh000300')">沪深300</button>
+                        <button class="chart-tab-btn" id="guorn-idx-sz399006" onclick="switchGuornIndex('sz399006')">创业板指</button>
+                        <button class="chart-tab-btn" id="guorn-idx-sh000905" onclick="switchGuornIndex('sh000905')">中证500</button>
+                    </div>
+
+                    <!-- 周期与快捷缩放 -->
+                    <div style="display:flex; gap:5px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">周期:</span>
+                        <button class="chart-tab-btn active" id="guorn-period-day" onclick="switchGuornPeriod('day')">日线</button>
+                        <button class="chart-tab-btn" id="guorn-period-week" onclick="switchGuornPeriod('week')">周线</button>
+                        <button class="chart-tab-btn" id="guorn-period-month" onclick="switchGuornPeriod('month')">月线</button>
+                    </div>
+
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">缩放:</span>
+                        <button class="chart-tab-btn" onclick="zoomGuornFast('half_year')">半年</button>
+                        <button class="chart-tab-btn" onclick="zoomGuornFast('1_year')">1年</button>
+                        <button class="chart-tab-btn" onclick="zoomGuornFast('3_year')">3年</button>
+                        <button class="chart-tab-btn active" id="btn-guorn-zoom-all" onclick="zoomGuornFast('all')">全部</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 果仁网情绪温度计核心卡片 (温度仪表 + 建议仓位 + 择时信号 + 均线系统) -->
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px;" id="guorn-metrics-summary">
+                <div class="stat-metric-card" style="border-left: 3px solid #10b981;">
+                    <span style="font-size:12px; color:#94a3b8">果仁情绪温度计 (0-100)</span>
+                    <span style="font-size:24px; font-weight:800; color:#10b981" id="guorn-metric-temp-val">--</span>
+                    <span style="font-size:11px; color:#34d399" id="guorn-metric-temp-level">计算中...</span>
+                </div>
+                <div class="stat-metric-card" style="border-left: 3px solid #f59e0b;">
+                    <span style="font-size:12px; color:#94a3b8">量化择时建议仓位</span>
+                    <span style="font-size:24px; font-weight:800; color:#f59e0b" id="guorn-metric-pos-val">--%</span>
+                    <span style="font-size:11px; color:#cbd5e1" id="guorn-metric-sig-text">等待信号</span>
+                </div>
+                <div class="stat-metric-card" style="border-left: 3px solid #38bdf8;">
+                    <span style="font-size:12px; color:#94a3b8">均线偏离度 (BIAS20)</span>
+                    <span style="font-size:24px; font-weight:800; color:#38bdf8" id="guorn-metric-bias-val">--%</span>
+                    <span style="font-size:11px; color:#94a3b8" id="guorn-metric-trend-val">MA20对比</span>
+                </div>
+                <div class="stat-metric-card" style="border-left: 3px solid #ef4444;">
+                    <span style="font-size:12px; color:#94a3b8">MACD 动能量化柱</span>
+                    <span style="font-size:24px; font-weight:800; color:#ef4444" id="guorn-metric-macd-val">--</span>
+                    <span style="font-size:11px; color:#94a3b8" id="guorn-metric-macd-signal">动量状态</span>
+                </div>
+                <div class="stat-metric-card" style="border-left: 3px solid #a855f7;">
+                    <span style="font-size:12px; color:#94a3b8">年化波动率 / 20D收益</span>
+                    <span style="font-size:24px; font-weight:800; color:#a855f7" id="guorn-metric-vol-val">--%</span>
+                    <span style="font-size:11px; color:#94a3b8" id="guorn-metric-ret-val">20D收益: --</span>
+                </div>
+            </div>
+
+            <!-- 点击点位历史对比明细卡片 (动态注入) -->
+            <div id="guorn-point-detail-box" style="display:none; margin-bottom: 14px; padding: 14px 18px; background: rgba(15, 23, 42, 0.95); border: 1px solid #10b981; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);">
+                <!-- 点击任意点位展示果仁择时模型切片 -->
+            </div>
+
+            <!-- 果仁网大盘情绪温度与择时仓位曲线 ECharts 图 -->
+            <div id="guorn-sentiment-chart" style="width: 100%; height: 380px;"></div>
+        </div>
+    </div>
+
+    <!-- 主视图 2: 所有板块历史 PB / PE 多板块横向对比看板 -->
+    <div class="container" id="view-valuation" style="display: none;">
+        <div class="card-box">
+            <div class="section-head">
+                <div class="section-title">
+                    <span>📈 全行业板块历史估值 (PE / PB) 多板块综合对比投研中心</span>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8">
+                    支持在同一画布添加多个板块，历史走势横向叠图对比，评估估值安全边际与相对分位
+                </div>
+            </div>
+
+            <!-- 控制栏: 板块添加与多选（支持全市场880+板块全量下拉菜单选择 + 拼音/缩写/汉字搜索输入） -->
+            <div class="valuation-ctrl-bar">
+                <div class="sector-select-box" style="position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <!-- 1. 全量板块下拉菜单 -->
+                    <span style="font-size: 13px; color: #94a3b8">📋 下拉菜单选择:</span>
+                    <select id="sector-select-dropdown" class="custom-select" style="max-width: 240px;" onchange="onSelectDropdownChanged(this.value)">
+                        <option value="">-- 全市场板块下拉列表 (880+) --</option>
+                    </select>
+
+                    <span style="color: #475569; margin: 0 4px;">或</span>
+
+                    <!-- 2. 首字母缩写/全拼/名称联想搜索输入框 -->
+                    <span style="font-size: 13px; color: #94a3b8">🔍 拼音/缩写搜索:</span>
+                    <div style="position: relative; display: inline-block;">
+                        <input type="text" id="sector-search-input" class="custom-select" style="width: 250px;" 
+                               placeholder="输入缩写(如 SWZZ/CBZZ)或名称..." 
+                               onfocus="onSectorSearchInput(this.value)"
+                               oninput="onSectorSearchInput(this.value)"
+                               onkeydown="if(event.key === 'Enter') addSearchedSector()">
+                        
+                        <!-- 实时联想匹配建议框 -->
+                        <div id="sector-search-suggestions" style="display: none; position: absolute; top: 40px; left: 0; width: 330px; max-height: 280px; overflow-y: auto; background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px; z-index: 200; box-shadow: 0 10px 25px rgba(0,0,0,0.6);">
+                            <!-- 动态注入搜索匹配结果 -->
+                        </div>
+                    </div>
+
+                    <button class="primary-btn" onclick="addSearchedSector()">+ 加入对比</button>
+                    <button class="chart-tab-btn" onclick="clearAllComparedSectors()">清空所有</button>
+                </div>
+                <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                    <!-- K线周期选择: 日线 / 周线 / 月线 / 年线 -->
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span style="font-size: 13px; color: #94a3b8">横轴周期:</span>
+                        <button class="chart-tab-btn active" id="val-period-day" onclick="switchValuationPeriod('day')">日线</button>
+                        <button class="chart-tab-btn" id="val-period-week" onclick="switchValuationPeriod('week')">周线</button>
+                        <button class="chart-tab-btn" id="val-period-month" onclick="switchValuationPeriod('month')">月线</button>
+                        <button class="chart-tab-btn" id="val-period-year" onclick="switchValuationPeriod('year')">年线</button>
+                    </div>
+
+                    <!-- 对比指标选择: PE / PB -->
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span style="font-size: 13px; color: #94a3b8">对比指标:</span>
+                        <button class="chart-tab-btn active" id="val-metric-pe" onclick="switchValuationMetric('pe')">市盈率 (PE-TTM)</button>
+                        <button class="chart-tab-btn" id="val-metric-pb" onclick="switchValuationMetric('pb')">市净率 (PB)</button>
+                    </div>
+                </div>
+                <!-- 已选择的板块标签栏 -->
+                <div class="chosen-tags-container" id="chosen-sectors-tags">
+                    <!-- 动态注入已选择板块标签 -->
+                </div>
+            </div>
+
+            <!-- 图表顶部动态标题与区间状态条 -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; padding: 0 4px;">
+                <div style="font-size:14px; font-weight:700; color:#e2e8f0; display:flex; align-items:center; gap:8px;">
+                    <span id="valuation-chart-title">多板块历史估值走势对比</span>
+                    <span id="valuation-chart-range-badge" style="font-size:11px; color:#38bdf8; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.3); padding:2px 8px; border-radius:4px; font-weight:normal;"></span>
+                </div>
+                <div id="valuation-chart-subtext" style="font-size:12px; color:#94a3b8;"></div>
+            </div>
+
+            <!-- 估值走势对比 ECharts 交互大图 -->
+            <div id="valuation-chart" style="width: 100%; height: 460px; margin-bottom: 20px;"></div>
+
+            <!-- 所选板块估值统计与分位数对比表格 -->
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>板块代码</th>
+                            <th>板块名称</th>
+                            <th id="th-val-pe">当前市盈率 (PE)</th>
+                            <th id="th-val-pe-range">PE 历史最低/最高</th>
+                            <th id="th-val-pe-pct">PE 历史百分位</th>
+                            <th id="th-val-pb">当前市净率 (PB)</th>
+                            <th id="th-val-pb-range">PB 历史最低/最高</th>
+                            <th id="th-val-pb-pct">PB 历史百分位</th>
+                            <th>估值定位评价</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="valuation-summary-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 板块成分股与全量股票穿透弹窗 (支持查看所有后排股票) -->
+    <div class="modal-backdrop" id="sector-modal" onclick="if(event.target === this) closeSectorModal()">
+        <div class="modal-content">
+            <button class="close-btn" onclick="closeSectorModal()">✕</button>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <h2 id="modal-sector-title" style="font-size: 20px;"></h2>
+                <div style="font-size:12px; color:#38bdf8; background:#1e293b; padding:4px 10px; border-radius:4px;">
+                    💡 提示：点击任意股票名称或代码，即可查看该股票实时K线图与即时分时图
+                </div>
+            </div>
+            <div id="modal-sector-desc" style="color: #94a3b8; font-size: 13px; margin-bottom: 18px;"></div>
+
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>代码</th>
+                            <th>股票名称</th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('price')" title="按现价排序">
+                                现价 <span id="sort-modal-price">⇅</span>
+                            </th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('change_percent')" title="按涨幅排序">
+                                涨幅 <span id="sort-modal-change_percent">⇅</span>
+                            </th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('turnover_rate')" title="按换手率排序">
+                                换手率 <span id="sort-modal-turnover_rate">⇅</span>
+                            </th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('amount')" title="按成交额排序">
+                                成交额 <span id="sort-modal-amount">⇅</span>
+                            </th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('mkt_cap')" title="按总市值排序">
+                                总市值 <span id="sort-modal-mkt_cap">⇅</span>
+                            </th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('pe_ratio')" title="按市盈率(PE)排序">
+                                市盈率 (PE) <span id="sort-modal-pe_ratio">⇅</span>
+                            </th>
+                            <th style="cursor:pointer; user-select:none;" onclick="sortModalStocks('pb_ratio')" title="按市净率(PB)排序">
+                                市净率 (PB) <span id="sort-modal-pb_ratio">⇅</span>
+                            </th>
+                            <th>梯队/后排定位</th>
+                            <th>量化逻辑归因</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-stocks-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 任意股票深度图表弹窗 (即时分时图 + 前复权日K线图) -->
+    <div class="modal-backdrop" id="stock-chart-modal" onclick="if(event.target === this) closeStockChartModal()">
+        <div class="chart-modal-content">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div class="chart-header-info" id="chart-stock-info">
+                    <!-- 动态注入股票名称、代码、现价、涨跌幅、成交额等 -->
+                </div>
+                <button class="close-btn" onclick="closeStockChartModal()">✕</button>
+            </div>
+
+            <!-- 图表类型与周期切换: 即时分时图 vs 日K线 / 周K线 / 月K线 / 年K线 vs 备注（人气与热度分析） -->
+            <div class="chart-tabs-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <button class="chart-tab-btn active" id="tab-chart-minute" onclick="switchStockChartTab('minute')">⚡ 即时分时</button>
+                    <button class="chart-tab-btn" id="tab-chart-day" onclick="switchStockChartTab('day')">📊 日K线</button>
+                    <button class="chart-tab-btn" id="tab-chart-week" onclick="switchStockChartTab('week')">📅 周K线</button>
+                    <button class="chart-tab-btn" id="tab-chart-month" onclick="switchStockChartTab('month')">🗓️ 月K线</button>
+                    <button class="chart-tab-btn" id="tab-chart-year" onclick="switchStockChartTab('year')">📈 年K线</button>
+                    <button class="chart-tab-btn" id="tab-chart-reason" onclick="switchStockChartTab('reason')" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border-color: #6366f1; color: #c7d2fe; display:inline-flex; align-items:center; gap:6px;">
+                        📝 备注（高人气/热度分析）
+                    </button>
+                </div>
+            </div>
+
+            <!-- ECharts 图表容器 -->
+            <div id="single-stock-chart" style="width: 100%; height: 460px;"></div>
+
+            <!-- 股票高人气/高热度原因归因与投研备注面板 -->
+            <div id="stock-reason-container" style="display:none; width: 100%; min-height: 460px; max-height: 520px; overflow-y: auto; padding-right: 6px;"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
