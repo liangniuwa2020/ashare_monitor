@@ -80,7 +80,9 @@ flowchart TD
 
 - **投研看板访问地址**：[http://127.0.0.1:8099](http://127.0.0.1:8099)
 - **API 交互文档 (Swagger UI)**：[http://127.0.0.1:8099/docs](http://127.0.0.1:8099/docs)
-- **一键启动脚本**：双击运行 [run.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/run.bat)
+- **1. 一键依赖安装**：双击运行 [install_dependencies.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/install_dependencies.bat)（自动创建虚拟环境并由清华镜像源加速安装全部包）
+- **2. 一键数据聚合**：双击运行 [aggregate_data.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/aggregate_data.bat)（全市场大盘+Top20板块+启动时段+龙头梯队+龙虎榜+果仁多因子全量采集入库并打印终端报告）
+- **3. 一键启动看板**：双击运行 [run.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/run.bat)（启动 FastAPI 服务并自动在浏览器打开看板）
 - **本地项目路径**：[`E:\Antigravity ex_project\ashare_monitor`](file:///E:/Antigravity%20ex_project/ashare_monitor)
 
 ---

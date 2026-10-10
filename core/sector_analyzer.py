@@ -33,7 +33,10 @@ class SectorLeaderAnalyzer:
         根据领涨股的分时成交量突增拐点与分时走势推断板块的启动时间段
         """
         try:
-            trends = self.eastmoney.get_intraday_trends(leader_code)
+            # 优先使用毫秒级响应、永不超时的腾讯分时通道，兼顾极速与防网络抖动
+            trends = self.tencent.get_intraday_minute(leader_code)
+            if not trends or len(trends) < 5:
+                trends = self.eastmoney.get_intraday_trends(leader_code)
             if not trends or len(trends) < 10:
                 # 若无法获取分时细化数据，根据涨幅强度经验推算
                 if leader_change >= 9.8:

@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from collectors.eastmoney import EastmoneyCollector
+from collectors.tencent import TencentCollector
 
 logger = logging.getLogger("GuorenQuantEngine")
 
@@ -18,11 +19,15 @@ class GuorenQuantEngine:
 
     def __init__(self):
         self.em_collector = EastmoneyCollector()
+        self.tencent = TencentCollector()
 
     def calculate_factors_for_stock(self, stock_code, stock_name, pe=15.0, pb=1.5):
         """为单只标的计算多因子衍生指标与复合打分"""
         try:
-            klines = self.em_collector.get_daily_klines(stock_code, limit=60)
+            # 优先使用毫秒级稳定的腾讯日K线通道，兼顾极速与防网络抖动
+            klines = self.tencent.get_kline_data(stock_code, period="day", limit=60)
+            if not klines or len(klines) < 15:
+                klines = self.em_collector.get_daily_klines(stock_code, limit=60)
             if not klines or len(klines) < 15:
                 # 若历史K线较少，提供基于盘口估值的初始因子
                 return {
