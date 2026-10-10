@@ -308,44 +308,45 @@
                 </div>
             </div>
 
-            <!-- 官网经典分类 Tab -->
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; border-bottom:1px solid #1e293b; padding-bottom:6px;">
-                <button class="chart-tab-btn active" style="background:#1d4ed8; color:#fff; font-weight:bold;">市场强度指标</button>
-                <button class="chart-tab-btn">指数因子</button>
-                <button class="chart-tab-btn">行业因子</button>
-                <button class="chart-tab-btn">指数估值</button>
-                <button class="chart-tab-btn">行业估值</button>
-                <button class="chart-tab-btn">指数景气程度</button>
-                <button class="chart-tab-btn">行业景气程度</button>
-                <button class="chart-tab-btn">解禁市值</button>
-                <button class="chart-tab-btn">指数IC</button>
-                <button class="chart-tab-btn">行业IC</button>
-                <button class="chart-tab-btn">日内风向</button>
+            <!-- 官网经典分类 11 大 Tab 导航 -->
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; border-bottom:1px solid #1e293b; padding-bottom:6px;" id="guorn-vane-tabs-bar">
+                <button class="chart-tab-btn active" id="btn-tab-intensity" onclick="switchGuornVaneTab('intensity')">市场强度指标</button>
+                <button class="chart-tab-btn" id="btn-tab-index_factors" onclick="switchGuornVaneTab('index_factors')">指数因子</button>
+                <button class="chart-tab-btn" id="btn-tab-sector_factors" onclick="switchGuornVaneTab('sector_factors')">行业因子</button>
+                <button class="chart-tab-btn" id="btn-tab-index_valuation" onclick="switchGuornVaneTab('index_valuation')">指数估值</button>
+                <button class="chart-tab-btn" id="btn-tab-sector_valuation" onclick="switchGuornVaneTab('sector_valuation')">行业估值</button>
+                <button class="chart-tab-btn" id="btn-tab-index_prosperity" onclick="switchGuornVaneTab('index_prosperity')">指数景气程度</button>
+                <button class="chart-tab-btn" id="btn-tab-sector_prosperity" onclick="switchGuornVaneTab('sector_prosperity')">行业景气程度</button>
+                <button class="chart-tab-btn" id="btn-tab-lockup" onclick="switchGuornVaneTab('lockup')">解禁市值</button>
+                <button class="chart-tab-btn" id="btn-tab-index_ic" onclick="switchGuornVaneTab('index_ic')">指数IC</button>
+                <button class="chart-tab-btn" id="btn-tab-sector_ic" onclick="switchGuornVaneTab('sector_ic')">行业IC</button>
+                <button class="chart-tab-btn" id="btn-tab-intraday" onclick="switchGuornVaneTab('intraday')">日内风向</button>
             </div>
 
-            <!-- 控制与查询栏: 投资域选择 + 查询按钮 -->
+            <!-- 控制与查询栏: 投资域选择 + 说明 -->
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
                 <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:12px; color:#94a3b8;">分析域/基准:</span>
                     <select id="guorn-domain-select" class="custom-select" style="padding:4px 10px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:4px;" onchange="switchGuornIntensityDomain(this.value)">
-                        <option value="all">全市场</option>
-                        <option value="hs300">沪深300</option>
-                        <option value="zz500">中证500</option>
-                        <option value="cyb">创业板</option>
+                        <option value="all">全市场 / 上证基准</option>
+                        <option value="hs300">沪深300 (核心白马蓝筹)</option>
+                        <option value="zz500">中证500 (中盘成长)</option>
+                        <option value="cyb">创业板 (高弹性成长)</option>
                     </select>
-                    <button class="primary-btn" style="padding:4px 14px; font-size:12px;" onclick="loadGuornMarketVane()">查询</button>
+                    <button class="primary-btn" style="padding:4px 14px; font-size:12px;" onclick="loadGuornMarketVane()">🔄 刷新当前模型</button>
                 </div>
 
-                <div style="font-size:12px; color:#94a3b8; display:flex; align-items:center; gap:14px;">
-                    <span style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#2563eb;"></span> 全市场 果仁强度</span>
-                    <span style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:2px; background:#ef4444;"></span> 0轴多空分水岭</span>
+                <div style="font-size:12px; color:#94a3b8; display:flex; align-items:center; gap:14px;" id="guorn-vane-legend-info">
+                    <span style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#38bdf8;"></span> 当前量化模型: <b id="guorn-current-tab-name-label" style="color:#38bdf8;">市场强度指标</b></span>
+                    <span style="display:flex; align-items:center; gap:4px;" id="guorn-vane-sub-legend"><span style="display:inline-block; width:12px; height:2px; background:#ef4444;"></span> 0轴多空分水岭</span>
                 </div>
             </div>
 
-            <!-- 果仁市场强度趋势 ECharts 交互大图 (0轴基准，上牛下熊) -->
-            <div id="guorn-intensity-chart" style="width: 100%; height: 340px;"></div>
+            <!-- 动态专属可视化图表容器 -->
+            <div id="guorn-intensity-chart" style="width: 100%; height: 350px;"></div>
 
-            <!-- 底部时间缩放与快捷控制栏 (1个月/3个月/6个月/1年/2年/全部) -->
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid #1e293b;">
+            <!-- 市场强度专属底部时间缩放栏 (仅在市场强度Tab展示) -->
+            <div id="guorn-intensity-timeline-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid #1e293b;">
                 <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#94a3b8;">
                     <span>展示区间:</span>
                     <input type="text" id="guorn-range-start-input" readonly style="width:90px; background:#1e293b; border:1px solid #334155; color:#cbd5e1; padding:2px 6px; font-size:12px; border-radius:3px;" value="2024-09-25">
@@ -364,14 +365,15 @@
                 </div>
             </div>
 
-            <!-- 官网经典当前强度状态表格摘要 (投资域 / 果仁强度指标 / 市场状态) -->
-            <div style="margin-top:14px;">
+            <!-- 动态专属明细数据表容器 (根据当前激活的 Tab 渲染对应的专业量化表格) -->
+            <div style="margin-top:14px;" id="guorn-vane-dynamic-table-container">
                 <table style="width:100%; font-size:13px; text-align:left;">
                     <thead>
                         <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
                             <th style="padding:8px;">投资域</th>
                             <th style="padding:8px;">果仁强度指标</th>
                             <th style="padding:8px;">市场状态</th>
+                            <th style="padding:8px;">量化信号指导</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -379,6 +381,7 @@
                             <td style="padding:10px 8px;" id="guorn-table-domain-label">全市场</td>
                             <td style="padding:10px 8px; font-weight:700; font-size:15px;" id="guorn-table-intensity-val">--</td>
                             <td style="padding:10px 8px; font-weight:700; font-size:14px;" id="guorn-table-state-val">--</td>
+                            <td style="padding:10px 8px; color:#cbd5e1;" id="guorn-table-signal-val">以0轴为分界，多头区域顺势做多，空头区域谨慎防守</td>
                         </tr>
                     </tbody>
                 </table>

@@ -1031,29 +1031,18 @@ async function loadGuornMarketVane() {
             });
             indFactorTbody.innerHTML = html;
         }
-        // 渲染官方模式：果仁强度指标趋势图与表格摘要
+        // 缓存完整的果仁风向标全量数据，供 11 个分类 Tab 随时切换
+        currentGuornVaneData = json;
         if (json.intensity_history) {
             currentGuornIntensityHistory = json.intensity_history;
-            renderGuornIntensityChart(currentGuornIntensityHistory);
         }
+
+        // 根据当前选中的 Tab 渲染图表与表格
+        renderGuornCurrentTab();
 
         if (json.latest_intensity) {
             const li = json.latest_intensity;
-            const domainNameMap = { all: "全市场", hs300: "沪深300", zz500: "中证500", cyb: "创业板" };
-            const domLabel = document.getElementById("guorn-table-domain-label");
-            const intValDom = document.getElementById("guorn-table-intensity-val");
-            const stateValDom = document.getElementById("guorn-table-state-val");
             const latestDateLabel = document.getElementById("guorn-vane-latest-date-label");
-
-            if (domLabel) domLabel.innerText = domainNameMap[json.domain] || "全市场";
-            if (intValDom) {
-                intValDom.innerText = (li.intensity >= 0 ? '+' : '') + li.intensity.toFixed(2);
-                intValDom.style.color = li.intensity >= 0 ? '#ef4444' : '#10b981';
-            }
-            if (stateValDom) {
-                stateValDom.innerText = li.state;
-                stateValDom.style.color = li.state === '牛市' ? '#ef4444' : '#10b981';
-            }
             if (latestDateLabel) {
                 latestDateLabel.innerText = `(最新数据日期: ${li.date})`;
             }
@@ -1061,6 +1050,809 @@ async function loadGuornMarketVane() {
     } catch (e) {
         console.error("加载果仁市场风向标失败:", e);
     }
+}
+
+// 全局状态：当前激活的果仁市场风向标 Tab
+let currentGuornVaneActiveTab = 'intensity';
+let currentGuornVaneData = null;
+
+const GUORN_TAB_NAME_MAP = {
+    'intensity': '市场强度指标',
+    'index_factors': '指数因子',
+    'sector_factors': '行业因子',
+    'index_valuation': '指数估值',
+    'sector_valuation': '行业估值',
+    'index_prosperity': '指数景气程度',
+    'sector_prosperity': '行业景气程度',
+    'lockup': '解禁市值',
+    'index_ic': '指数IC',
+    'sector_ic': '行业IC',
+    'intraday': '日内风向'
+};
+
+// 切换果仁风向标分类 Tab (11 个 Tab 一键无缝切换)
+function switchGuornVaneTab(tabKey) {
+    currentGuornVaneActiveTab = tabKey;
+
+    // 更新 Tab 按钮的激活状态
+    const tabsBar = document.getElementById('guorn-vane-tabs-bar');
+    if (tabsBar) {
+        const btns = tabsBar.querySelectorAll('.chart-tab-btn');
+        btns.forEach(btn => {
+            btn.classList.remove('active');
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.style.fontWeight = '';
+        });
+        const activeBtn = document.getElementById(`btn-tab-${tabKey}`);
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+            activeBtn.style.background = '#1d4ed8';
+            activeBtn.style.color = '#fff';
+            activeBtn.style.fontWeight = 'bold';
+        }
+    }
+
+    // 更新顶部标题指示
+    const tabNameLabel = document.getElementById('guorn-current-tab-name-label');
+    if (tabNameLabel) {
+        tabNameLabel.innerText = GUORN_TAB_NAME_MAP[tabKey] || tabKey;
+    }
+
+    // 控制时间轴缩放条显示/隐藏（仅在市场强度指标下显示时间轴缩放）
+    const timelineBar = document.getElementById('guorn-intensity-timeline-bar');
+    if (timelineBar) {
+        timelineBar.style.display = (tabKey === 'intensity') ? 'flex' : 'none';
+    }
+
+    // 更新副图例指示
+    const subLegend = document.getElementById('guorn-vane-sub-legend');
+    if (subLegend) {
+        if (tabKey === 'intensity') {
+            subLegend.innerHTML = '<span style="display:inline-block; width:12px; height:2px; background:#ef4444;"></span> 0轴多空分水岭';
+            subLegend.style.display = 'flex';
+        } else if (tabKey === 'index_factors' || tabKey === 'sector_factors') {
+            subLegend.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> 因子打分越高动能/质量越优';
+            subLegend.style.display = 'flex';
+        } else if (tabKey === 'index_valuation' || tabKey === 'sector_valuation') {
+            subLegend.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b;"></span> 0~30%极低估 · 30~70%适中 · >70%高估';
+            subLegend.style.display = 'flex';
+        } else if (tabKey === 'lockup') {
+            subLegend.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span> 解禁市值柱高代表解禁规模压力';
+            subLegend.style.display = 'flex';
+        } else if (tabKey === 'index_ic' || tabKey === 'sector_ic') {
+            subLegend.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#a855f7;"></span> Rank IC > 0.05 代表显著超额预测能力';
+            subLegend.style.display = 'flex';
+        } else if (tabKey === 'intraday') {
+            subLegend.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#38bdf8;"></span> 盘中主力多空意图时序';
+            subLegend.style.display = 'flex';
+        } else {
+            subLegend.style.display = 'none';
+        }
+    }
+
+    // 重新渲染当前 Tab 对应的内容
+    renderGuornCurrentTab();
+}
+
+// 统一渲染入口：根据当前激活的 Tab 渲染专属 ECharts 与明细数据表
+function renderGuornCurrentTab() {
+    if (!currentGuornVaneData || !currentGuornVaneData.vane) return;
+    const v = currentGuornVaneData.vane;
+    const tabKey = currentGuornVaneActiveTab;
+
+    switch (tabKey) {
+        case 'intensity':
+            renderGuornIntensityTab();
+            break;
+        case 'index_factors':
+            renderGuornIndexFactorsTab(v.index_factors);
+            break;
+        case 'sector_factors':
+            renderGuornSectorFactorsTab(v.sector_factors);
+            break;
+        case 'index_valuation':
+            renderGuornIndexValuationTab(v.index_valuations);
+            break;
+        case 'sector_valuation':
+            renderGuornSectorValuationTab(v.sector_valuations);
+            break;
+        case 'index_prosperity':
+            renderGuornIndexProsperityTab(v.index_prosperity);
+            break;
+        case 'sector_prosperity':
+            renderGuornSectorProsperityTab(v.sector_prosperity);
+            break;
+        case 'lockup':
+            renderGuornLockupTab(v.lockup_market_cap);
+            break;
+        case 'index_ic':
+            renderGuornIndexICTab(v.index_ic);
+            break;
+        case 'sector_ic':
+            renderGuornSectorICTab(v.sector_ic);
+            break;
+        case 'intraday':
+            renderGuornIntradayTab(v.intraday_data);
+            break;
+        default:
+            renderGuornIntensityTab();
+    }
+}
+
+// Tab 1: 市场强度指标
+function renderGuornIntensityTab() {
+    if (currentGuornIntensityHistory) {
+        renderGuornIntensityChart(currentGuornIntensityHistory);
+    }
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container || !currentGuornVaneData) return;
+    const li = currentGuornVaneData.latest_intensity || { intensity: 0, state: '--' };
+    const domainNameMap = { all: "全市场", hs300: "沪深300", zz500: "中证500", cyb: "创业板" };
+    const domainName = domainNameMap[currentGuornVaneData.domain] || "全市场";
+    const isBull = li.intensity >= 0;
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">投资域</th>
+                <th style="padding:8px;">果仁强度指标</th>
+                <th style="padding:8px;">市场状态</th>
+                <th style="padding:8px;">量化信号指导</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr style="background:rgba(30,41,59,0.5);">
+                <td style="padding:10px 8px; font-weight:bold; color:#38bdf8;">${domainName}</td>
+                <td style="padding:10px 8px; font-weight:700; font-size:16px; color:${isBull ? '#ef4444' : '#10b981'};">${isBull ? '+' : ''}${li.intensity.toFixed(2)}</td>
+                <td style="padding:10px 8px; font-weight:700; font-size:14px; color:${isBull ? '#ef4444' : '#10b981'};"><span class="tag ${isBull ? 'tag-red' : 'tag-green'}">${li.state}</span></td>
+                <td style="padding:10px 8px; color:#cbd5e1;">${isBull ? '强度大于0轴处于强势做多区，动量溢价显著，宜积极顺势进攻' : '强度低于0轴处于弱势防守区，注意控制敞口与防范回撤'}</td>
+            </tr>
+        </tbody>
+    </table>
+    `;
+}
+
+// Tab 2: 指数因子
+function renderGuornIndexFactorsTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const names = data.map(d => d.index_name);
+    const momentumScores = data.map(d => d.momentum);
+    const valuationScores = data.map(d => d.valuation);
+    const growthScores = data.map(d => d.growth);
+    const qualityScores = data.map(d => d.quality);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '宽基指数多因子打分对比 (动量 / 估值安全 / 成长 / ROE质量)', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: { data: ['动量因子', '估值安全', '业绩成长', '盈利质量'], textStyle: { color: '#94a3b8' }, top: '2%', right: '2%' },
+        grid: { left: '3%', right: '3%', top: '16%', bottom: '8%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { color: '#cbd5e1' } },
+        yAxis: { type: 'value', min: 40, max: 100, splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            { name: '动量因子', type: 'bar', data: momentumScores, itemStyle: { color: '#ef4444' } },
+            { name: '估值安全', type: 'bar', data: valuationScores, itemStyle: { color: '#10b981' } },
+            { name: '业绩成长', type: 'bar', data: growthScores, itemStyle: { color: '#38bdf8' } },
+            { name: '盈利质量', type: 'bar', data: qualityScores, itemStyle: { color: '#f59e0b' } }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#38bdf8">${d.index_name}</b> <span style="font-size:11px; color:#64748b;">(${d.index_code})</span></td>
+            <td style="padding:8px; font-weight:bold; color:#ef4444;">${d.momentum}</td>
+            <td style="padding:8px; font-weight:bold; color:#10b981;">${d.valuation}</td>
+            <td style="padding:8px; font-weight:bold; color:#38bdf8;">${d.growth}</td>
+            <td style="padding:8px; font-weight:bold; color:#f59e0b;">${d.quality}</td>
+            <td style="padding:8px;"><span class="tag tag-purple">${d.composite_score}</span></td>
+            <td style="padding:8px; color:#cbd5e1;">${d.dominant_factor}</td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">指数代码与名称</th>
+                <th style="padding:8px;">动量趋势分</th>
+                <th style="padding:8px;">估值安全分</th>
+                <th style="padding:8px;">成长弹性分</th>
+                <th style="padding:8px;">质量盈利分</th>
+                <th style="padding:8px;">综合得分</th>
+                <th style="padding:8px;">优势因子与风格定位</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 3: 行业因子
+function renderGuornSectorFactorsTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const names = data.map(d => d.industry_name);
+    const compositeScores = data.map(d => d.composite);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '申万核心行业量化综合因子强弱排行', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: '3%', right: '4%', top: '14%', bottom: '15%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { color: '#cbd5e1', interval: 0, rotate: 20 } },
+        yAxis: { type: 'value', min: 50, max: 95, splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            {
+                name: '行业多因子综合打分',
+                type: 'bar',
+                data: compositeScores,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#a855f7' },
+                        { offset: 1, color: '#3b82f6' }
+                    ]),
+                    borderRadius: [4, 4, 0, 0]
+                },
+                label: { show: true, position: 'top', color: '#c084fc', fontWeight: 'bold' }
+            }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#a855f7">${d.industry_name}</b></td>
+            <td style="padding:8px; font-weight:bold; color:#c084fc;">${d.composite}</td>
+            <td style="padding:8px;"><span class="tag tag-blue">${d.factor_bias}</span></td>
+            <td style="padding:8px; color:#38bdf8;">${d.trend}</td>
+            <td style="padding:8px; color:#ef4444; font-weight:bold;">${d.pe_ttm}</td>
+            <td style="padding:8px;"><span class="tag tag-gold">${d.status}</span></td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">行业板块</th>
+                <th style="padding:8px;">综合得分</th>
+                <th style="padding:8px;">主导因子倾向</th>
+                <th style="padding:8px;">趋势走向</th>
+                <th style="padding:8px;">PE-TTM</th>
+                <th style="padding:8px;">景气状态</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 4: 指数估值
+function renderGuornIndexValuationTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const names = data.map(d => d.index_name);
+    const pePercentiles = data.map(d => d.pe_percentile);
+    const pbPercentiles = data.map(d => d.pb_percentile);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '宽基指数 PE / PB 历史分位水平 (0~30%极低估，30~70%适中，>70%高估)', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', formatter: (params) => `${params[0].name}<br/>PE历史分位: ${params[0].value}%<br/>PB历史分位: ${params[1].value}%` },
+        legend: { data: ['PE历史分位数', 'PB历史分位数'], textStyle: { color: '#94a3b8' }, top: '2%', right: '2%' },
+        grid: { left: '3%', right: '3%', top: '16%', bottom: '8%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { color: '#cbd5e1' } },
+        yAxis: { type: 'value', max: 100, splitLine: { lineStyle: { color: '#1e293b' } }, axisLabel: { formatter: '{value}%' } },
+        series: [
+            { name: 'PE历史分位数', type: 'bar', data: pePercentiles, itemStyle: { color: '#10b981' } },
+            { name: 'PB历史分位数', type: 'bar', data: pbPercentiles, itemStyle: { color: '#38bdf8' } }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#38bdf8">${d.index_name}</b></td>
+            <td style="padding:8px; font-weight:bold; color:#ef4444;">${d.pe_ttm}</td>
+            <td style="padding:8px;"><span class="tag ${d.pe_percentile <= 35 ? 'tag-green' : 'tag-gold'}">${d.pe_percentile}%</span></td>
+            <td style="padding:8px; font-weight:bold; color:#f59e0b;">${d.pb}</td>
+            <td style="padding:8px;"><span class="tag tag-blue">${d.pb_percentile}%</span></td>
+            <td style="padding:8px; color:#10b981; font-weight:bold;">${d.dividend_yield}%</td>
+            <td style="padding:8px; color:#cbd5e1;">${d.valuation_status}</td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">指数名称</th>
+                <th style="padding:8px;">市盈率 (PE-TTM)</th>
+                <th style="padding:8px;">PE历史分位</th>
+                <th style="padding:8px;">市净率 (PB)</th>
+                <th style="padding:8px;">PB历史分位</th>
+                <th style="padding:8px;">股息率</th>
+                <th style="padding:8px;">估值安全评价</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 5: 行业估值
+function renderGuornSectorValuationTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const names = data.map(d => d.sector_name);
+    const pePercentiles = data.map(d => d.pe_percentile);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '申万各行业 PE 历史百分位梯队 (按估值由低到高排列)', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', formatter: '{b}<br/>PE历史分位: {c}%' },
+        grid: { left: '3%', right: '3%', top: '14%', bottom: '15%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { color: '#cbd5e1', interval: 0, rotate: 25 } },
+        yAxis: { type: 'value', max: 100, splitLine: { lineStyle: { color: '#1e293b' } }, axisLabel: { formatter: '{value}%' } },
+        series: [
+            {
+                name: 'PE历史分位数',
+                type: 'bar',
+                data: pePercentiles.map((val, idx) => ({
+                    value: val,
+                    itemStyle: { color: data[idx].zone_color }
+                })),
+                label: { show: true, position: 'top', formatter: '{c}%', color: '#cbd5e1' }
+            }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#e2e8f0">${d.sector_name}</b></td>
+            <td style="padding:8px; font-weight:bold; color:#ef4444;">${d.pe_ttm}</td>
+            <td style="padding:8px;"><span class="tag" style="background:${d.zone_color}22; color:${d.zone_color}; border:1px solid ${d.zone_color}">${d.pe_percentile}%</span></td>
+            <td style="padding:8px; font-weight:bold; color:#38bdf8;">${d.pb}</td>
+            <td style="padding:8px; color:#94a3b8;">${d.pb_percentile}%</td>
+            <td style="padding:8px; color:#10b981; font-weight:bold;">${d.dividend_yield}%</td>
+            <td style="padding:8px;"><b style="color:${d.zone_color}">${d.zone}</b></td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">行业板块</th>
+                <th style="padding:8px;">PE-TTM</th>
+                <th style="padding:8px;">PE历史分位数</th>
+                <th style="padding:8px;">市净率 PB</th>
+                <th style="padding:8px;">PB分位数</th>
+                <th style="padding:8px;">股息率</th>
+                <th style="padding:8px;">估值区间评价</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 6: 指数景气程度
+function renderGuornIndexProsperityTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const names = data.map(d => d.index_name);
+    const prosperityScores = data.map(d => d.prosperity_score);
+    const profitGrowths = data.map(d => d.profit_growth);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '宽基指数景气度评分与净利润预期增速', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['景气综合打分', '净利润预期增速(%)'], textStyle: { color: '#94a3b8' }, top: '2%', right: '2%' },
+        grid: { left: '3%', right: '3%', top: '16%', bottom: '8%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { color: '#cbd5e1' } },
+        yAxis: [
+            { type: 'value', min: 50, max: 100, name: '景气分', splitLine: { lineStyle: { color: '#1e293b' } } },
+            { type: 'value', name: '增速(%)', splitLine: { show: false } }
+        ],
+        series: [
+            { name: '景气综合打分', type: 'bar', data: prosperityScores, itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] } },
+            { name: '净利润预期增速(%)', type: 'line', yAxisIndex: 1, data: profitGrowths, itemStyle: { color: '#ef4444' }, lineStyle: { width: 3 } }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#38bdf8">${d.index_name}</b></td>
+            <td style="padding:8px; font-weight:bold; color:#ef4444; font-size:15px;">${d.prosperity_score}</td>
+            <td style="padding:8px; color:#10b981; font-weight:bold;">+${d.revenue_growth}%</td>
+            <td style="padding:8px; color:#f59e0b; font-weight:bold;">+${d.profit_growth}%</td>
+            <td style="padding:8px; color:#38bdf8;">${d.roe}%</td>
+            <td style="padding:8px;"><span class="tag ${d.tag === 'boom' ? 'tag-red' : 'tag-blue'}">${d.status}</span></td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">指数名称</th>
+                <th style="padding:8px;">景气度指数得分</th>
+                <th style="padding:8px;">营收增速</th>
+                <th style="padding:8px;">净利润复合增速</th>
+                <th style="padding:8px;">净资产收益率 ROE</th>
+                <th style="padding:8px;">景气阶段定位</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 7: 行业景气程度
+function renderGuornSectorProsperityTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const names = data.map(d => d.sector_name);
+    const scores = data.map(d => d.prosperity_score);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '重点产业赛道景气度与订单饱满度排行', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', formatter: '{b}<br/>景气度指数: {c}' },
+        grid: { left: '3%', right: '4%', top: '14%', bottom: '15%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { color: '#cbd5e1', interval: 0, rotate: 20 } },
+        yAxis: { type: 'value', min: 50, max: 100, splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            {
+                name: '行业景气度',
+                type: 'bar',
+                data: scores,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#ef4444' },
+                        { offset: 1, color: '#f59e0b' }
+                    ]),
+                    borderRadius: [4, 4, 0, 0]
+                },
+                label: { show: true, position: 'top', color: '#ef4444', fontWeight: 'bold' }
+            }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px; font-weight:bold; color:#f59e0b;">No.${d.rank}</td>
+            <td style="padding:8px;"><b style="color:#38bdf8">${d.sector_name}</b></td>
+            <td style="padding:8px; font-weight:bold; color:#ef4444;">${d.prosperity_score}</td>
+            <td style="padding:8px; color:#10b981;">${d.order_status}</td>
+            <td style="padding:8px; color:#f59e0b;">${d.roe_trend}</td>
+            <td style="padding:8px;"><span class="tag tag-gold">${d.cycle_stage}</span></td>
+            <td style="padding:8px; color:#cbd5e1; font-size:12px;">${d.comment}</td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">名次</th>
+                <th style="padding:8px;">核心产业赛道</th>
+                <th style="padding:8px;">景气评分</th>
+                <th style="padding:8px;">产能与订单动向</th>
+                <th style="padding:8px;">ROE环比</th>
+                <th style="padding:8px;">周期阶段</th>
+                <th style="padding:8px;">产业量化逻辑解读</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 8: 解禁市值
+function renderGuornLockupTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const periods = data.timeline.map(d => d.period);
+    const amounts = data.timeline.map(d => d.amount);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '近期未来各周期解禁市值规模分布 (亿元)', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', formatter: (p) => `${p[0].name}<br/>解禁市值: ${p[0].value} 亿元` },
+        grid: { left: '3%', right: '3%', top: '16%', bottom: '8%', containLabel: true },
+        xAxis: { type: 'category', data: periods, axisLabel: { color: '#cbd5e1' } },
+        yAxis: { type: 'value', name: '解禁金额 (亿元)', splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            {
+                name: '解禁市值',
+                type: 'bar',
+                data: amounts,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#f59e0b' },
+                        { offset: 1, color: '#ef4444' }
+                    ]),
+                    borderRadius: [4, 4, 0, 0]
+                },
+                label: { show: true, position: 'top', color: '#f59e0b', formatter: '{c} 亿' }
+            }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.top_stocks.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#38bdf8">${d.name}</b> <span style="font-size:11px; color:#64748b;">(${d.code})</span></td>
+            <td style="padding:8px; color:#cbd5e1;">${d.free_date}</td>
+            <td style="padding:8px; font-weight:bold; color:#f59e0b;">${d.amount} 亿元</td>
+            <td style="padding:8px; color:#ef4444;">${d.ratio}%</td>
+            <td style="padding:8px;"><span class="tag tag-blue">${d.type}</span></td>
+            <td style="padding:8px; color:#10b981;">${d.impact}</td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <div style="margin-bottom:8px; font-size:12px; color:#94a3b8; display:flex; justify-content:space-between;">
+        <span>本周解禁总量: <b style="color:#f59e0b;">${data.summary.weekly_amount} 亿元</b> | 全月解禁总量: <b style="color:#ef4444;">${data.summary.monthly_amount} 亿元</b></span>
+        <span>综合风险评级: <span class="tag tag-gold">${data.summary.risk_rating}</span> (${data.summary.risk_desc})</span>
+    </div>
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">重点解禁个股</th>
+                <th style="padding:8px;">解禁日期</th>
+                <th style="padding:8px;">解禁总市值</th>
+                <th style="padding:8px;">占总股本比</th>
+                <th style="padding:8px;">股份类型</th>
+                <th style="padding:8px;">二级市场冲击研判</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 9: 指数IC
+function renderGuornIndexICTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const factors = data.map(d => d.factor);
+    const hs300 = data.map(d => d.hs300);
+    const zz500 = data.map(d => d.zz500);
+    const cyb = data.map(d => d.cyb);
+    const kc50 = data.map(d => d.kc50);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '核心因子在不同指数域内的 Rank IC 有效性对比', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: { data: ['沪深300', '中证500', '创业板指', '科创50'], textStyle: { color: '#94a3b8' }, top: '2%', right: '2%' },
+        grid: { left: '3%', right: '3%', top: '16%', bottom: '10%', containLabel: true },
+        xAxis: { type: 'category', data: factors, axisLabel: { color: '#cbd5e1', interval: 0, rotate: 15 } },
+        yAxis: { type: 'value', name: 'Rank IC', splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            { name: '沪深300', type: 'bar', data: hs300, itemStyle: { color: '#3b82f6' } },
+            { name: '中证500', type: 'bar', data: zz500, itemStyle: { color: '#10b981' } },
+            { name: '创业板指', type: 'bar', data: cyb, itemStyle: { color: '#f59e0b' } },
+            { name: '科创50', type: 'bar', data: kc50, itemStyle: { color: '#ef4444' } }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#e2e8f0">${d.factor}</b></td>
+            <td style="padding:8px; color:#3b82f6; font-weight:bold;">${d.hs300.toFixed(3)}</td>
+            <td style="padding:8px; color:#10b981; font-weight:bold;">${d.zz500.toFixed(3)}</td>
+            <td style="padding:8px; color:#60a5fa;">${d.zz1000.toFixed(3)}</td>
+            <td style="padding:8px; color:#f59e0b; font-weight:bold;">${d.cyb.toFixed(3)}</td>
+            <td style="padding:8px; color:#ef4444; font-weight:bold;">${d.kc50.toFixed(3)}</td>
+            <td style="padding:8px;"><span class="tag tag-purple">${d.effective_domain}</span></td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">量化核心因子</th>
+                <th style="padding:8px;">沪深300 IC</th>
+                <th style="padding:8px;">中证500 IC</th>
+                <th style="padding:8px;">中证1000 IC</th>
+                <th style="padding:8px;">创业板 IC</th>
+                <th style="padding:8px;">科创50 IC</th>
+                <th style="padding:8px;">最佳适配投资域</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 10: 行业IC
+function renderGuornSectorICTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const sectors = data.map(d => d.sector);
+    const ics = data.map(d => d.rank_ic);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: '各行业优势因子 Rank IC 与预测信息系数', textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', formatter: (p) => `${p[0].name}<br/>优势因子 Rank IC: ${p[0].value}` },
+        grid: { left: '3%', right: '3%', top: '14%', bottom: '15%', containLabel: true },
+        xAxis: { type: 'category', data: sectors, axisLabel: { color: '#cbd5e1', interval: 0, rotate: 20 } },
+        yAxis: { type: 'value', min: 0.04, max: 0.11, splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            {
+                name: '行业主导因子 Rank IC',
+                type: 'bar',
+                data: ics,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#10b981' },
+                        { offset: 1, color: '#059669' }
+                    ]),
+                    borderRadius: [4, 4, 0, 0]
+                },
+                label: { show: true, position: 'top', color: '#10b981', fontWeight: 'bold' }
+            }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    let rowsHtml = data.map(d => `
+        <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px;"><b style="color:#a855f7">${d.sector}</b></td>
+            <td style="padding:8px;"><span class="tag tag-gold">${d.dominant_factor}</span></td>
+            <td style="padding:8px; font-weight:bold; color:#10b981;">${d.rank_ic.toFixed(3)}</td>
+            <td style="padding:8px; color:#cbd5e1;">${d.ic_ir.toFixed(2)}</td>
+            <td style="padding:8px; color:#f59e0b; font-weight:bold;">${d.win_rate}%</td>
+            <td style="padding:8px;"><span class="tag tag-green">${d.status}</span></td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">行业板块</th>
+                <th style="padding:8px;">主导因子策略</th>
+                <th style="padding:8px;">Rank IC</th>
+                <th style="padding:8px;">IC_IR (稳定性)</th>
+                <th style="padding:8px;">月度胜率</th>
+                <th style="padding:8px;">因子有效性</th>
+            </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+    </table>
+    `;
+}
+
+// Tab 11: 日内风向
+function renderGuornIntradayTab(data) {
+    if (!data) return;
+    const chartDom = document.getElementById('guorn-intensity-chart');
+    if (!chartDom) return;
+    let chart = echarts.getInstanceByDom(chartDom) || echarts.init(chartDom, 'dark');
+
+    const timeline = data.intraday_timeline || [];
+    const times = timeline.map(t => t.time);
+    const intensities = timeline.map(t => t.intensity);
+
+    chart.setOption({
+        backgroundColor: '#0f172a',
+        title: { text: `日内主力博弈与情绪风向走势 (当前: ${data.direction} · 主力资金: ${data.main_funds_flow})`, textStyle: { color: '#e2e8f0', fontSize: 14 }, left: '2%', top: '2%' },
+        tooltip: { trigger: 'axis', formatter: (p) => `${p[0].name}<br/>日内强度: ${p[0].value}<br/>信号: ${timeline[p[0].dataIndex]?.label || ''}` },
+        grid: { left: '3%', right: '3%', top: '16%', bottom: '10%', containLabel: true },
+        xAxis: { type: 'category', data: times, axisLabel: { color: '#cbd5e1' } },
+        yAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: [
+            {
+                name: '日内强度',
+                type: 'line',
+                data: intensities,
+                smooth: true,
+                lineStyle: { color: '#38bdf8', width: 3 },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(56, 189, 248, 0.35)' },
+                        { offset: 1, color: 'rgba(56, 189, 248, 0.02)' }
+                    ])
+                },
+                markLine: {
+                    silent: true,
+                    data: [{ yAxis: 0, lineStyle: { color: '#ef4444', width: 1.5, type: 'dashed' }, label: { formatter: '0轴分水岭', color: '#ef4444' } }]
+                }
+            }
+        ]
+    }, true);
+
+    const container = document.getElementById("guorn-vane-dynamic-table-container");
+    if (!container) return;
+    container.innerHTML = `
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:12px;">
+        <div style="background:rgba(30,41,59,0.6); padding:10px; border-radius:6px; border:1px solid #334155;">
+            <div style="color:#94a3b8; font-size:12px;">日内多空定调</div>
+            <div style="font-size:18px; font-weight:bold; color:#38bdf8; margin:4px 0;">${data.direction}</div>
+            <div style="font-size:11px; color:#cbd5e1;">情绪综合得分: ${data.sentiment_score} 分</div>
+        </div>
+        <div style="background:rgba(30,41,59,0.6); padding:10px; border-radius:6px; border:1px solid #334155;">
+            <div style="color:#94a3b8; font-size:12px;">主力资金流向</div>
+            <div style="font-size:18px; font-weight:bold; color:#10b981; margin:4px 0;">${data.main_funds_flow}</div>
+            <div style="font-size:11px; color:#cbd5e1;">进攻侧重: ${data.offensive_bias}</div>
+        </div>
+        <div style="background:rgba(30,41,59,0.6); padding:10px; border-radius:6px; border:1px solid #334155;">
+            <div style="color:#94a3b8; font-size:12px;">风格利差博弈</div>
+            <div style="font-size:16px; font-weight:bold; color:#f472b6; margin:4px 0;">${data.size_style}</div>
+            <div style="font-size:11px; color:#cbd5e1;">${data.size_desc}</div>
+        </div>
+    </div>
+    <table style="width:100%; font-size:13px; text-align:left;">
+        <thead>
+            <tr style="border-bottom:1px solid #334155; color:#94a3b8;">
+                <th style="padding:8px;">盘中时段</th>
+                <th style="padding:8px;">即时强度</th>
+                <th style="padding:8px;">盘面主力行为轨迹与定格</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${timeline.map(t => `
+                <tr style="border-bottom:1px solid #1e293b;">
+                    <td style="padding:8px; font-weight:bold; color:#38bdf8;">${t.time}</td>
+                    <td style="padding:8px; font-weight:bold; color:${t.intensity >= 0 ? '#ef4444' : '#10b981'};">${t.intensity >= 0 ? '+' : ''}${t.intensity}</td>
+                    <td style="padding:8px; color:#cbd5e1;">${t.label}</td>
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>
+    `;
 }
 
 // 切换果仁强度指标投资域 (全市场, 沪深300, 中证500, 创业板)
