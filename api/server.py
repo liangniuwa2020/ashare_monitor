@@ -903,15 +903,21 @@ def get_sector_detail(
     target_code = code
     all_sectors = sina_collector.get_all_market_sectors()
     if not target_code:
-        for s in all_sectors:
-            if s["sector_name"] == clean_name:
-                target_code = s["sector_code"]
-                break
-        if not target_code:
+        # 特殊别名直接匹配
+        if clean_name in ["贵金属", "黄金", "黄金股", "白银"]:
+            target_code = "new_gjs"
+        else:
             for s in all_sectors:
-                if clean_name in s["sector_name"] or s["sector_name"] in clean_name:
+                if s["sector_name"] == clean_name or s["sector_code"] == clean_name:
                     target_code = s["sector_code"]
                     break
+            if not target_code:
+                for s in all_sectors:
+                    if clean_name in s["sector_name"] or s["sector_name"] in clean_name:
+                        target_code = s["sector_code"]
+                        break
+    elif target_code in ["贵金属", "黄金", "黄金股", "BK0732", "chgn_700107"]:
+        target_code = "new_gjs"
 
     if target_code:
         constituents = sina_collector.get_sector_constituents(target_code, limit=500)

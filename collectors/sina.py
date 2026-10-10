@@ -20,32 +20,57 @@ class SinaCollector(BaseCollector):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
         res = self.get_json(url, headers=headers)
-        if not res or "text" not in res:
-            return []
-        
-        matches = re.findall(r'"([^"]+)":"([^"]+)"', res["text"])
         sectors = []
-        for code, val in matches:
-            parts = val.split(',')
-            if len(parts) >= 13:
-                try:
-                    leader_clean_code = parts[8].replace("sh", "").replace("sz", "").replace("bj", "")
-                    sectors.append({
-                        "sector_code": parts[0],
-                        "sector_name": parts[1],
-                        "stock_count": int(parts[2]),
-                        "avg_price": float(parts[3]),
-                        "change_percent": round(float(parts[5]), 2),
-                        "volume": int(parts[6]),
-                        "amount": float(parts[7]),
-                        "leader_code": leader_clean_code,
-                        "leader_full_code": parts[8],
-                        "leader_change": round(float(parts[9]), 2),
-                        "leader_price": float(parts[10]),
-                        "leader_name": parts[12]
-                    })
-                except Exception as e:
-                    continue
+        if res and "text" in res:
+            matches = re.findall(r'"([^"]+)":"([^"]+)"', res["text"])
+            for code, val in matches:
+                parts = val.split(',')
+                if len(parts) >= 13:
+                    try:
+                        leader_clean_code = parts[8].replace("sh", "").replace("sz", "").replace("bj", "")
+                        sectors.append({
+                            "sector_code": parts[0],
+                            "sector_name": parts[1],
+                            "stock_count": int(parts[2]),
+                            "avg_price": float(parts[3]),
+                            "change_percent": round(float(parts[5]), 2),
+                            "volume": int(parts[6]),
+                            "amount": float(parts[7]),
+                            "leader_code": leader_clean_code,
+                            "leader_full_code": parts[8],
+                            "leader_change": round(float(parts[9]), 2),
+                            "leader_price": float(parts[10]),
+                            "leader_name": parts[12]
+                        })
+                    except Exception as e:
+                        continue
+
+        # 动态补充/聚合【贵金属】(Precious Metals) 主要行业板块
+        try:
+            gjs_stocks = self.get_sector_constituents("chgn_700107", limit=100)
+            if gjs_stocks:
+                gjs_leader = max(gjs_stocks, key=lambda x: x.get("change_percent", 0))
+                gjs_avg_price = round(sum(s.get("price", 0) for s in gjs_stocks) / len(gjs_stocks), 2)
+                gjs_avg_chg = round(sum(s.get("change_percent", 0) for s in gjs_stocks) / len(gjs_stocks), 2)
+                gjs_vol = sum(s.get("volume", 0) for s in gjs_stocks)
+                gjs_amt = sum(s.get("amount", 0) for s in gjs_stocks)
+                leader_code = gjs_leader.get("code") or gjs_leader.get("symbol", "").replace("sh", "").replace("sz", "")
+                sectors.append({
+                    "sector_code": "new_gjs",
+                    "sector_name": "贵金属",
+                    "stock_count": len(gjs_stocks),
+                    "avg_price": gjs_avg_price,
+                    "change_percent": gjs_avg_chg,
+                    "volume": gjs_vol,
+                    "amount": gjs_amt,
+                    "leader_code": leader_code,
+                    "leader_full_code": gjs_leader.get("symbol", leader_code),
+                    "leader_change": gjs_leader.get("change_percent", 0),
+                    "leader_price": gjs_leader.get("price", 0),
+                    "leader_name": gjs_leader.get("name", "")
+                })
+        except Exception as e_gjs:
+            logger.warning(f"动态构建贵金属板块数据异常: {e_gjs}")
         
         # 默认按板块涨幅降序排列
         sectors.sort(key=lambda x: x["change_percent"], reverse=True)
@@ -143,6 +168,11 @@ class SinaCollector(BaseCollector):
         all_stocks = []
         max_limit = limit if limit and limit > 0 else 500
 
+        # 板块代码映射别名转换（如 贵金属 new_gjs / BK0732 -> 新浪黄金股概念 chgn_700107）
+        query_node = sector_code
+        if sector_code in ["new_gjs", "BK0732", "gjs", "guijinshu", "贵金属"]:
+            query_node = "chgn_700107"
+
         while True:
             url = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
             params = {
@@ -150,7 +180,7 @@ class SinaCollector(BaseCollector):
                 "num": page_size,
                 "sort": "changepercent",
                 "asc": 0,
-                "node": sector_code
+                "node": query_node
             }
             headers = {"Referer": "http://finance.sina.com.cn"}
             data = self.get_json(url, params=params, headers=headers)
