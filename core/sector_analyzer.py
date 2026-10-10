@@ -139,13 +139,14 @@ class SectorLeaderAnalyzer:
         all_sectors = self.sina.get_all_industry_sectors()
         top20 = all_sectors[:20]
 
-        # 确保关键特色板块（如【贵金属】）在全量日度更新中永不缺失，方便全时段全景穿透
+        # 确保关键特色板块（如【贵金属矿企】与【贵金属】）在全量日度更新中永不缺失，方便全时段全景穿透
         sectors_to_process = list(top20)
         top_codes = {s["sector_code"] for s in top20}
         for sec in all_sectors:
-            if sec.get("sector_code") == "new_gjs" and "new_gjs" not in top_codes:
+            sec_c = sec.get("sector_code")
+            if sec_c in ["new_gjs_mine", "new_gjs"] and sec_c not in top_codes:
                 sectors_to_process.append(sec)
-                break
+                top_codes.add(sec_c)
 
         sector_rows = []
         stock_rows = []

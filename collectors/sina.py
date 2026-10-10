@@ -6,6 +6,34 @@ from collectors.base import BaseCollector
 
 logger = logging.getLogger("CollectorSina")
 
+# 精确筛选：有自有矿山/金银矿采选资产的贵金属矿企池（剔除纯珠宝零售、纯冶炼代工、百货及非矿企业）
+PRECIOUS_MINE_STOCKS = {
+    '601899': {'name': '紫金矿业', 'mine_desc': '全球矿业巨头，巨量黄金、铜、锂矿山资源'},
+    '600547': {'name': '山东黄金', 'mine_desc': '国内黄金矿业龙头，自产金储量超千吨'},
+    '600489': {'name': '中金黄金', 'mine_desc': '央企黄金矿业龙头，多座大型金矿采选基地'},
+    '600988': {'name': '赤峰黄金', 'mine_desc': '海内外多座优质金矿，高品位矿山高效采选'},
+    '000975': {'name': '山金国际', 'mine_desc': '原银泰黄金，拥有黑河银泰等多座高品位大型金矿'},
+    '002155': {'name': '湖南黄金', 'mine_desc': '黄金与锑矿核心龙头，坐拥沃溪等大型金锑钨矿山'},
+    '601069': {'name': '西部黄金', 'mine_desc': '西北地区最大产金企业，拥有哈图等核心自产金矿'},
+    '001337': {'name': '四川黄金', 'mine_desc': '拥有大型梭罗沟金矿，自产金毛利率极高'},
+    '000506': {'name': '招金黄金', 'mine_desc': '原中润资源，布局斐济等海外金矿资源采选'},
+    '000426': {'name': '兴业银锡', 'mine_desc': '国内白银与锡矿龙头，拥有银漫矿业等顶级高品位银多金属矿'},
+    '000603': {'name': '盛达资源', 'mine_desc': '白银矿业龙头，控股银都矿业、金山矿业等多座高品位银铅锌矿山'},
+    '002716': {'name': '湖南白银', 'mine_desc': '原金贵银业，拥有宝山矿业等银多金属矿采选资源'},
+    '601212': {'name': '白银有色', 'mine_desc': '综合矿企，拥有境内外金银铜铅锌矿山资源'},
+    '601020': {'name': '华钰矿业', 'mine_desc': '拥有塔吉克斯坦塔铝金业等大型金锑多金属矿山'},
+    '601168': {'name': '西部矿业', 'mine_desc': '拥有玉龙铜矿等多座特大型矿山，伴生金银产量显著'},
+    '603979': {'name': '金诚信', 'mine_desc': '拥有海外自营铜金银矿山资源，矿山工程采矿一体化'},
+    '002237': {'name': '恒邦股份', 'mine_desc': '大型黄金冶炼与矿山开发企业，控股多座金矿采选基地'},
+    '600531': {'name': '豫光金铅', 'mine_desc': '大型白银与黄金资源综合回收与伴生金银矿采选'},
+    '600459': {'name': '贵研铂业', 'mine_desc': '稀贵金属龙头，布局铂族贵金属资源与矿料循环提取'},
+    '300139': {'name': '晓程科技', 'mine_desc': '在加纳等非洲地区拥有三座黄金矿山金矿采矿权'},
+    '603132': {'name': '金徽股份', 'mine_desc': '大型绿色矿山采选企业，拥有郭家沟等铅锌银矿山'},
+    '000688': {'name': '国城矿业', 'mine_desc': '拥有多座有色金属矿山，含银铅锌金多金属采选'},
+    '600497': {'name': '驰宏锌锗', 'mine_desc': '保有铅锌银金属资源储量超3000万吨，高品位银多金属矿'},
+    '600711': {'name': '盛屯矿业', 'mine_desc': '拥有埃玛矿业等多座铅锌银铜矿山'}
+}
+
 class SinaCollector(BaseCollector):
     """新浪财经板块与行情采集器，高并发直连、低延迟稳定"""
 
@@ -45,7 +73,7 @@ class SinaCollector(BaseCollector):
                     except Exception as e:
                         continue
 
-        # 动态补充/聚合【贵金属】(Precious Metals) 主要行业板块
+        # 动态补充/聚合【贵金属】(Precious Metals 全概念) 主要行业板块
         try:
             gjs_stocks = self.get_sector_constituents("chgn_700107", limit=100)
             if gjs_stocks:
@@ -69,8 +97,32 @@ class SinaCollector(BaseCollector):
                     "leader_price": gjs_leader.get("price", 0),
                     "leader_name": gjs_leader.get("name", "")
                 })
+
+                # 动态补充/聚合【贵金属矿企】(专属纯矿山金银铜资源采选企业，剔除纯首饰零售及非矿)
+                mine_stocks = [s for s in gjs_stocks if s.get("code") in PRECIOUS_MINE_STOCKS]
+                if mine_stocks:
+                    mine_leader = max(mine_stocks, key=lambda x: x.get("change_percent", 0))
+                    mine_avg_price = round(sum(s.get("price", 0) for s in mine_stocks) / len(mine_stocks), 2)
+                    mine_avg_chg = round(sum(s.get("change_percent", 0) for s in mine_stocks) / len(mine_stocks), 2)
+                    mine_vol = sum(s.get("volume", 0) for s in mine_stocks)
+                    mine_amt = sum(s.get("amount", 0) for s in mine_stocks)
+                    mine_leader_code = mine_leader.get("code") or mine_leader.get("symbol", "").replace("sh", "").replace("sz", "")
+                    sectors.append({
+                        "sector_code": "new_gjs_mine",
+                        "sector_name": "贵金属矿企",
+                        "stock_count": len(mine_stocks),
+                        "avg_price": mine_avg_price,
+                        "change_percent": mine_avg_chg,
+                        "volume": mine_vol,
+                        "amount": mine_amt,
+                        "leader_code": mine_leader_code,
+                        "leader_full_code": mine_leader.get("symbol", mine_leader_code),
+                        "leader_change": mine_leader.get("change_percent", 0),
+                        "leader_price": mine_leader.get("price", 0),
+                        "leader_name": mine_leader.get("name", "")
+                    })
         except Exception as e_gjs:
-            logger.warning(f"动态构建贵金属板块数据异常: {e_gjs}")
+            logger.warning(f"动态构建贵金属及贵金属矿企板块数据异常: {e_gjs}")
         
         # 默认按板块涨幅降序排列
         sectors.sort(key=lambda x: x["change_percent"], reverse=True)
@@ -168,9 +220,10 @@ class SinaCollector(BaseCollector):
         all_stocks = []
         max_limit = limit if limit and limit > 0 else 500
 
-        # 板块代码映射别名转换（如 贵金属 new_gjs / BK0732 -> 新浪黄金股概念 chgn_700107）
+        # 板块代码映射别名转换（如 贵金属 new_gjs / 贵金属矿企 new_gjs_mine）
+        is_mine_only = sector_code in ["new_gjs_mine", "gjs_mine", "贵金属矿企", "贵金属矿业", "黄金矿企"]
         query_node = sector_code
-        if sector_code in ["new_gjs", "BK0732", "gjs", "guijinshu", "贵金属"]:
+        if is_mine_only or sector_code in ["new_gjs", "BK0732", "gjs", "guijinshu", "贵金属"]:
             query_node = "chgn_700107"
 
         while True:
@@ -213,6 +266,16 @@ class SinaCollector(BaseCollector):
             if len(data) < page_size or len(all_stocks) >= max_limit:
                 break
             page += 1
+
+        if is_mine_only:
+            # 严格筛选仅保留有真实矿山资源的贵金属矿企
+            all_stocks = [
+                {
+                    **st,
+                    "mine_desc": PRECIOUS_MINE_STOCKS[st["code"]]["mine_desc"]
+                }
+                for st in all_stocks if st.get("code") in PRECIOUS_MINE_STOCKS
+            ]
 
         return all_stocks[:max_limit]
 

@@ -486,6 +486,7 @@ class GuorenQuantEngine:
             {"industry_name": "通信/算力网络", "momentum": 83.2, "valuation": 64.0, "growth": 88.2, "quality": 83.0, "composite": 81.1, "factor_bias": "光模块算力·业绩确定", "trend": "多头主升", "pe_ttm": 31.4, "status": "业绩兑现"},
             {"industry_name": "医药生物", "momentum": 71.2, "valuation": 76.5, "growth": 64.5, "quality": 77.0, "composite": 73.1, "factor_bias": "低估值分位·创新药催化", "trend": "结构轮动", "pe_ttm": 26.5, "status": "估值安全"},
             {"industry_name": "机械设备/高端制造", "momentum": 77.8, "valuation": 68.2, "growth": 79.0, "quality": 75.4, "composite": 76.3, "factor_bias": "新质生产力·装备出海", "trend": "温和上涨", "pe_ttm": 24.8, "status": "稳步扩张"},
+            {"industry_name": "贵金属矿企", "momentum": 88.2, "valuation": 52.0, "growth": 86.5, "quality": 84.0, "composite": 85.2, "factor_bias": "自产矿黄金放量·超额高毛利", "trend": "加速主升", "pe_ttm": 22.8, "status": "纯矿山高弹性"},
             {"industry_name": "贵金属", "momentum": 85.6, "valuation": 56.5, "growth": 82.0, "quality": 79.5, "composite": 82.1, "factor_bias": "避险保值·大宗商品主升", "trend": "多头突破", "pe_ttm": 24.5, "status": "牛市共振"},
             {"industry_name": "工业金属/有色", "momentum": 78.5, "valuation": 61.0, "growth": 72.5, "quality": 71.2, "composite": 73.8, "factor_bias": "制造业复苏·周期顺风", "trend": "震荡偏强", "pe_ttm": 21.0, "status": "供给约束"},
             {"industry_name": "银行/红利高股息", "momentum": 65.8, "valuation": 91.5, "growth": 52.0, "quality": 88.5, "composite": 76.8, "factor_bias": "低波稳健·高分红底仓", "trend": "防御中枢", "pe_ttm": 5.8, "status": "高防御性"},
@@ -570,6 +571,7 @@ class GuorenQuantEngine:
             {"sector_name": "电力设备", "pe_ttm": 21.3, "pe_percentile": 25.6, "pb": 2.25, "pb_percentile": 21.0, "dividend_yield": 2.1, "zone": "低估安全", "zone_color": "#10b981"},
             {"sector_name": "医药生物", "pe_ttm": 26.5, "pe_percentile": 28.2, "pb": 2.80, "pb_percentile": 24.5, "dividend_yield": 1.9, "zone": "低估安全", "zone_color": "#10b981"},
             {"sector_name": "食品饮料", "pe_ttm": 20.6, "pe_percentile": 29.5, "pb": 4.20, "pb_percentile": 26.0, "dividend_yield": 2.8, "zone": "历史低位", "zone_color": "#10b981"},
+            {"sector_name": "贵金属矿企", "pe_ttm": 22.8, "pe_percentile": 39.5, "pb": 2.50, "pb_percentile": 35.0, "dividend_yield": 1.8, "zone": "中性适中", "zone_color": "#38bdf8"},
             {"sector_name": "贵金属", "pe_ttm": 24.5, "pe_percentile": 42.0, "pb": 2.65, "pb_percentile": 38.5, "dividend_yield": 1.6, "zone": "中性适中", "zone_color": "#38bdf8"},
             {"sector_name": "工业金属", "pe_ttm": 18.2, "pe_percentile": 36.5, "pb": 1.85, "pb_percentile": 32.0, "dividend_yield": 2.4, "zone": "低估安全", "zone_color": "#10b981"},
             {"sector_name": "汽车整车", "pe_ttm": 28.6, "pe_percentile": 48.0, "pb": 2.35, "pb_percentile": 44.5, "dividend_yield": 2.2, "zone": "中性适中", "zone_color": "#38bdf8"},
@@ -593,13 +595,14 @@ class GuorenQuantEngine:
         sector_prosperity_data = [
             {"rank": 1, "sector_name": "半导体/算力芯片", "prosperity_score": 92.5, "order_status": "供不应求·订单饱满", "roe_trend": "+4.2%", "cycle_stage": "景气主升期", "comment": "AI算力爆发与自主可控共振带动产业链全线放量"},
             {"rank": 2, "sector_name": "光模块/光通信", "prosperity_score": 89.8, "order_status": "海外800G/1.6T需求强劲", "roe_trend": "+5.8%", "cycle_stage": "加速扩张期", "comment": "全球头部云厂商算力基建加速建设，订单能见度高"},
-            {"rank": 3, "sector_name": "贵金属(黄金/白银)", "prosperity_score": 88.5, "order_status": "央行购金+抗通胀保值", "roe_trend": "+4.8%", "cycle_stage": "牛市主升期", "comment": "全球地缘不确定性与去美元化共振，贵金属现货与矿企盈利双升"},
-            {"rank": 4, "sector_name": "新能源汽车整车", "prosperity_score": 85.0, "order_status": "智能化升级·出海放量", "roe_trend": "+3.1%", "cycle_stage": "结构性高增", "comment": "智驾普及率跃升，海外市场出口份额连续攀升"},
-            {"rank": 5, "sector_name": "工业机器人/工控", "prosperity_score": 80.2, "order_status": "设备更新·国产替代", "roe_trend": "+2.4%", "cycle_stage": "拐点回暖", "comment": "政策支持大规模设备更新，制造业开工率回升"},
-            {"rank": 6, "sector_name": "电网设备/特高压", "prosperity_score": 78.6, "order_status": "国内特高压+海外电网改造", "roe_trend": "+2.0%", "cycle_stage": "稳步扩张", "comment": "全球电网升级周期拉动变压器与智能电表出海"},
-            {"rank": 7, "sector_name": "创新药/生物制造", "prosperity_score": 75.4, "order_status": "海外授权(BD)频传捷报", "roe_trend": "+1.8%", "cycle_stage": "底部复苏", "comment": "创新靶点出海商业化爆发，估值与盈利双重修复"},
-            {"rank": 8, "sector_name": "光伏/锂电材料", "prosperity_score": 68.0, "order_status": "供给侧出清·价格企稳", "roe_trend": "+0.5%", "cycle_stage": "去库筑底", "comment": "落后产能加速出清，头部企业成本优势显现"},
-            {"rank": 9, "sector_name": "传统消费/白酒", "prosperity_score": 62.5, "order_status": "去库存·温和复苏", "roe_trend": "-1.2%", "cycle_stage": "蓄势调整", "comment": "商务需求温和改善，头部品牌价盘保持稳健"}
+            {"rank": 3, "sector_name": "贵金属矿企(有矿金银)", "prosperity_score": 91.2, "order_status": "金银价格新高·矿山自产金高暴利", "roe_trend": "+6.2%", "cycle_stage": "超级景气主升", "comment": "自产矿黄金克金成本稳定，金价上涨利润全部弹性释放"},
+            {"rank": 4, "sector_name": "贵金属(黄金/白银全产业链)", "prosperity_score": 88.5, "order_status": "央行购金+抗通胀保值", "roe_trend": "+4.8%", "cycle_stage": "牛市主升期", "comment": "全球地缘不确定性与去美元化共振，贵金属现货与矿企盈利双升"},
+            {"rank": 5, "sector_name": "新能源汽车整车", "prosperity_score": 85.0, "order_status": "智能化升级·出海放量", "roe_trend": "+3.1%", "cycle_stage": "结构性高增", "comment": "智驾普及率跃升，海外市场出口份额连续攀升"},
+            {"rank": 6, "sector_name": "工业机器人/工控", "prosperity_score": 80.2, "order_status": "设备更新·国产替代", "roe_trend": "+2.4%", "cycle_stage": "拐点回暖", "comment": "政策支持大规模设备更新，制造业开工率回升"},
+            {"rank": 7, "sector_name": "电网设备/特高压", "prosperity_score": 78.6, "order_status": "国内特高压+海外电网改造", "roe_trend": "+2.0%", "cycle_stage": "稳步扩张", "comment": "全球电网升级周期拉动变压器与智能电表出海"},
+            {"rank": 8, "sector_name": "创新药/生物制造", "prosperity_score": 75.4, "order_status": "海外授权(BD)频传捷报", "roe_trend": "+1.8%", "cycle_stage": "底部复苏", "comment": "创新靶点出海商业化爆发，估值与盈利双重修复"},
+            {"rank": 9, "sector_name": "光伏/锂电材料", "prosperity_score": 68.0, "order_status": "供给侧出清·价格企稳", "roe_trend": "+0.5%", "cycle_stage": "去库筑底", "comment": "落后产能加速出清，头部企业成本优势显现"},
+            {"rank": 10, "sector_name": "传统消费/白酒", "prosperity_score": 62.5, "order_status": "去库存·温和复苏", "roe_trend": "-1.2%", "cycle_stage": "蓄势调整", "comment": "商务需求温和改善，头部品牌价盘保持稳健"}
         ]
 
         # 12. Tab 8 【解禁市值】(未来解禁时序分布、解禁类型与重点个股压力)
@@ -645,6 +648,7 @@ class GuorenQuantEngine:
         # 14. Tab 10 【行业IC】(核心量化因子在不同行业板块的 Rank IC 有效性表现)
         sector_ic_data = [
             {"sector": "电子/半导体", "dominant_factor": "20D动量突破", "rank_ic": 0.098, "ic_ir": 1.62, "win_rate": 72.0, "status": "超高有效"},
+            {"sector": "贵金属矿企", "dominant_factor": "自产矿商品高弹性动量", "rank_ic": 0.095, "ic_ir": 1.58, "win_rate": 71.5, "status": "超高有效"},
             {"sector": "通信/算力", "dominant_factor": "成长复合打分", "rank_ic": 0.092, "ic_ir": 1.55, "win_rate": 70.5, "status": "超高有效"},
             {"sector": "贵金属", "dominant_factor": "大宗商品顺周期动量", "rank_ic": 0.089, "ic_ir": 1.50, "win_rate": 69.2, "status": "高度有效"},
             {"sector": "汽车制造", "dominant_factor": "盈利预期拐点", "rank_ic": 0.084, "ic_ir": 1.41, "win_rate": 66.8, "status": "高度有效"},

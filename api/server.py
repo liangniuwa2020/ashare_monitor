@@ -904,7 +904,9 @@ def get_sector_detail(
     all_sectors = sina_collector.get_all_market_sectors()
     if not target_code:
         # 特殊别名直接匹配
-        if clean_name in ["贵金属", "黄金", "黄金股", "白银"]:
+        if clean_name in ["贵金属矿企", "贵金属矿业", "黄金矿企", "有矿贵金属"]:
+            target_code = "new_gjs_mine"
+        elif clean_name in ["贵金属", "黄金", "黄金股", "白银"]:
             target_code = "new_gjs"
         else:
             for s in all_sectors:
@@ -916,6 +918,8 @@ def get_sector_detail(
                     if clean_name in s["sector_name"] or s["sector_name"] in clean_name:
                         target_code = s["sector_code"]
                         break
+    elif target_code in ["new_gjs_mine", "gjs_mine", "贵金属矿企"]:
+        target_code = "new_gjs_mine"
     elif target_code in ["贵金属", "黄金", "黄金股", "BK0732", "chgn_700107"]:
         target_code = "new_gjs"
 
@@ -923,6 +927,7 @@ def get_sector_detail(
         constituents = sina_collector.get_sector_constituents(target_code, limit=500)
         formatted = []
         for idx, st in enumerate(constituents):
+            mine_tip = f"（矿山赋存：{st['mine_desc']}）" if st.get("mine_desc") else ""
             formatted.append({
                 "stock_code": st.get("code") or st.get("symbol", "").replace("sh", "").replace("sz", ""),
                 "stock_name": st.get("name"),
@@ -934,18 +939,19 @@ def get_sector_detail(
                 "pe_ratio": float(st.get("pe_ratio") or 0),
                 "pb_ratio": float(st.get("pb_ratio") or 0),
                 "is_dragon_rank": 1 if idx == 0 else (2 if idx == 1 else (3 if idx == 2 else 0)),
-                "dragon_reason": f"【{clean_name}】板块成分股，实时盘面交投"
+                "dragon_reason": f"【{clean_name}】核心成分股{mine_tip}，纯自营/控股矿山采选主线标的" if mine_tip else f"【{clean_name}】板块成分股，实时盘面交投"
             })
         
         avg_chg = round(sum(s["change_percent"] for s in formatted) / len(formatted), 2) if formatted else 0.0
+        reason_desc = "严格精选拥有在产黄金/白银/铜多金属矿山资源的硬核采选企业（已剔除下游纯首饰零售商及非矿标的）" if target_code == "new_gjs_mine" else f"【{clean_name}】细分行业全量成分股行情，实时跟踪全板块所有个股涨跌幅、估值与交投活跃度"
         return {
             "status": "success",
             "data": {
                 "sector_name": clean_name,
                 "sector_code": target_code,
                 "change_percent": avg_chg,
-                "launch_period": "盘中高频轮动",
-                "launch_reason": f"【{clean_name}】细分行业全量成分股行情，实时跟踪全板块所有个股涨跌幅、估值与交投活跃度",
+                "launch_period": "全球大宗顺周期·央行购金与抗通胀主升浪",
+                "launch_reason": reason_desc,
                 "leader_name": formatted[0]["stock_name"] if formatted else "",
                 "stock_count": len(formatted),
                 "constituents": formatted
