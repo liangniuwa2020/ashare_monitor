@@ -479,18 +479,18 @@ class GuorenQuantEngine:
 
         # 7. Tab 3 【行业因子】(申万/重点行业多维度量化因子打分对比)
         industry_factors_full = [
-            {"industry_name": "电子/半导体", "momentum": 88.5, "valuation": 42.0, "growth": 92.5, "quality": 78.0, "composite": 82.5, "factor_bias": "高贝塔动量·高景气", "trend": "加速进攻", "pe_ttm": 45.2, "status": "景气爆发"},
-            {"industry_name": "计算机/软件", "momentum": 84.0, "valuation": 38.5, "growth": 86.0, "quality": 69.5, "composite": 78.2, "factor_bias": "信创AI应用·动量突破", "trend": "震荡走高", "pe_ttm": 52.8, "status": "成长扩散"},
-            {"industry_name": "汽车/智能驾驶", "momentum": 82.0, "valuation": 61.2, "growth": 85.4, "quality": 81.0, "composite": 80.6, "factor_bias": "出海高增·质优成长", "trend": "稳步抬升", "pe_ttm": 28.6, "status": "高景气度"},
-            {"industry_name": "电力设备/新能源", "momentum": 75.4, "valuation": 72.8, "growth": 68.0, "quality": 76.5, "composite": 74.3, "factor_bias": "超跌反转·估值洼地", "trend": "筑底放量", "pe_ttm": 21.3, "status": "拐点修复"},
-            {"industry_name": "通信/算力网络", "momentum": 83.2, "valuation": 64.0, "growth": 88.2, "quality": 83.0, "composite": 81.1, "factor_bias": "光模块算力·业绩确定", "trend": "多头主升", "pe_ttm": 31.4, "status": "业绩兑现"},
-            {"industry_name": "医药生物", "momentum": 71.2, "valuation": 76.5, "growth": 64.5, "quality": 77.0, "composite": 73.1, "factor_bias": "低估值分位·创新药催化", "trend": "结构轮动", "pe_ttm": 26.5, "status": "估值安全"},
-            {"industry_name": "机械设备/高端制造", "momentum": 77.8, "valuation": 68.2, "growth": 79.0, "quality": 75.4, "composite": 76.3, "factor_bias": "新质生产力·装备出海", "trend": "温和上涨", "pe_ttm": 24.8, "status": "稳步扩张"},
-            {"industry_name": "贵金属矿企", "momentum": 88.2, "valuation": 52.0, "growth": 86.5, "quality": 84.0, "composite": 85.2, "factor_bias": "自产矿黄金放量·超额高毛利", "trend": "加速主升", "pe_ttm": 22.8, "status": "纯矿山高弹性"},
-            {"industry_name": "贵金属", "momentum": 85.6, "valuation": 56.5, "growth": 82.0, "quality": 79.5, "composite": 82.1, "factor_bias": "避险保值·大宗商品主升", "trend": "多头突破", "pe_ttm": 24.5, "status": "牛市共振"},
-            {"industry_name": "工业金属/有色", "momentum": 78.5, "valuation": 61.0, "growth": 72.5, "quality": 71.2, "composite": 73.8, "factor_bias": "制造业复苏·周期顺风", "trend": "震荡偏强", "pe_ttm": 21.0, "status": "供给约束"},
-            {"industry_name": "银行/红利高股息", "momentum": 65.8, "valuation": 91.5, "growth": 52.0, "quality": 88.5, "composite": 76.8, "factor_bias": "低波稳健·高分红底仓", "trend": "防御中枢", "pe_ttm": 5.8, "status": "高防御性"},
-            {"industry_name": "食品饮料/消费", "momentum": 58.2, "valuation": 83.0, "growth": 56.4, "quality": 85.0, "composite": 70.4, "factor_bias": "深度价值·弱动量等待", "trend": "区间筑底", "pe_ttm": 20.6, "status": "静待反转"}
+            {"industry_name": "电子/半导体", "momentum": 88.5, "valuation": 42.0, "growth": 92.5, "quality": 78.0, "composite": 82.5, "heat_score": 82.5, "factor_bias": "高贝塔动量·高景气", "trend": "加速进攻", "pe_ttm": 45.2, "status": "景气爆发"},
+            {"industry_name": "计算机/软件", "momentum": 84.0, "valuation": 38.5, "growth": 86.0, "quality": 69.5, "composite": 78.2, "heat_score": 78.2, "factor_bias": "信创AI应用·动量突破", "trend": "震荡走高", "pe_ttm": 52.8, "status": "成长扩散"},
+            {"industry_name": "汽车/智能驾驶", "momentum": 82.0, "valuation": 61.2, "growth": 85.4, "quality": 81.0, "composite": 80.6, "heat_score": 80.6, "factor_bias": "出海高增·质优成长", "trend": "稳步抬升", "pe_ttm": 28.6, "status": "高景气度"},
+            {"industry_name": "电力设备/新能源", "momentum": 75.4, "valuation": 72.8, "growth": 68.0, "quality": 76.5, "composite": 74.3, "heat_score": 74.3, "factor_bias": "超跌反转·估值洼地", "trend": "筑底放量", "pe_ttm": 21.3, "status": "拐点修复"},
+            {"industry_name": "通信/算力网络", "momentum": 83.2, "valuation": 64.0, "growth": 88.2, "quality": 83.0, "composite": 81.1, "heat_score": 81.1, "factor_bias": "光模块算力·业绩确定", "trend": "多头主升", "pe_ttm": 31.4, "status": "业绩兑现"},
+            {"industry_name": "医药生物", "momentum": 71.2, "valuation": 76.5, "growth": 64.5, "quality": 77.0, "composite": 73.1, "heat_score": 73.1, "factor_bias": "低估值分位·创新药催化", "trend": "结构轮动", "pe_ttm": 26.5, "status": "估值安全"},
+            {"industry_name": "机械设备/高端制造", "momentum": 77.8, "valuation": 68.2, "growth": 79.0, "quality": 75.4, "composite": 76.3, "heat_score": 76.3, "factor_bias": "新质生产力·装备出海", "trend": "温和上涨", "pe_ttm": 24.8, "status": "稳步扩张"},
+            {"industry_name": "贵金属矿企", "momentum": 88.2, "valuation": 52.0, "growth": 86.5, "quality": 84.0, "composite": 85.2, "heat_score": 85.2, "factor_bias": "自产矿黄金放量·超额高毛利", "trend": "加速主升", "pe_ttm": 22.8, "status": "纯矿山高弹性"},
+            {"industry_name": "贵金属", "momentum": 85.6, "valuation": 56.5, "growth": 82.0, "quality": 79.5, "composite": 82.1, "heat_score": 82.1, "factor_bias": "避险保值·大宗商品主升", "trend": "多头突破", "pe_ttm": 24.5, "status": "牛市共振"},
+            {"industry_name": "工业金属/有色", "momentum": 78.5, "valuation": 61.0, "growth": 72.5, "quality": 71.2, "composite": 73.8, "heat_score": 73.8, "factor_bias": "制造业复苏·周期顺风", "trend": "震荡偏强", "pe_ttm": 21.0, "status": "供给约束"},
+            {"industry_name": "银行/红利高股息", "momentum": 65.8, "valuation": 91.5, "growth": 52.0, "quality": 88.5, "composite": 76.8, "heat_score": 76.8, "factor_bias": "低波稳健·高分红底仓", "trend": "防御中枢", "pe_ttm": 5.8, "status": "高防御性"},
+            {"industry_name": "食品饮料/消费", "momentum": 58.2, "valuation": 83.0, "growth": 56.4, "quality": 85.0, "composite": 70.4, "heat_score": 70.4, "factor_bias": "深度价值·弱动量等待", "trend": "区间筑底", "pe_ttm": 20.6, "status": "静待反转"}
         ]
 
         # 8. Tab 4 【指数估值】(重点宽基指数估值全景：PE、PB、股息率与历史分位数)

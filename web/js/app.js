@@ -1019,10 +1019,11 @@ async function loadGuornMarketVane() {
         if (indFactorTbody && v.industry_factors) {
             let html = "";
             v.industry_factors.forEach(ind => {
+                const score = ind.heat_score ?? ind.composite ?? ind.momentum ?? "--";
                 html += `
                 <tr>
                     <td><b style="color:#a855f7">${ind.industry_name}</b></td>
-                    <td><b style="color:#ef4444">${ind.heat_score}</b></td>
+                    <td><b style="color:#ef4444">${score}</b></td>
                     <td><span class="tag tag-blue">${ind.factor_bias}</span></td>
                     <td><span style="color:#38bdf8">${ind.trend}</span></td>
                     <td>${ind.pe_ttm}</td>
