@@ -74,16 +74,48 @@ flowchart TD
 
 ---
 
-## 四、 本地运行与访问方式
+## 四、 本地与服务器运行方式 (Windows / Linux 双平台)
 
-系统已于后台守护运行，端口为 **8099**：
+系统默认运行于 **8099** 端口，支持 Windows 本地双击启动，以及 Linux 服务器一键部署/后台运行/Docker 容器化托管：
 
-- **投研看板访问地址**：[http://127.0.0.1:8099](http://127.0.0.1:8099)
+- **投研看板访问地址**：[http://127.0.0.1:8099](http://127.0.0.1:8099)（远程访问请将 `127.0.0.1` 替换为实际 IP）
 - **API 交互文档 (Swagger UI)**：[http://127.0.0.1:8099/docs](http://127.0.0.1:8099/docs)
+- **本地项目路径**：[`E:\Antigravity ex_project\ashare_monitor`](file:///E:/Antigravity%20ex_project/ashare_monitor)
+
+### 🪟 Windows 运行：
 - **1. 一键依赖安装**：双击运行 [install_dependencies.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/install_dependencies.bat)（自动创建虚拟环境并由清华镜像源加速安装全部包）
 - **2. 一键数据聚合**：双击运行 [aggregate_data.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/aggregate_data.bat)（全市场大盘+Top20板块+启动时段+龙头梯队+龙虎榜+果仁多因子全量采集入库并打印终端报告）
 - **3. 一键启动看板**：双击运行 [run.bat](file:///E:/Antigravity%20ex_project/ashare_monitor/run.bat)（启动 FastAPI 服务并自动在浏览器打开看板）
-- **本地项目路径**：[`E:\Antigravity ex_project\ashare_monitor`](file:///E:/Antigravity%20ex_project/ashare_monitor)
+
+### 🐧 Linux 服务器运行：
+- **1. 一键安装依赖**：
+  ```bash
+  chmod +x install_dependencies.sh run.sh aggregate_data.sh
+  ./install_dependencies.sh
+  ```
+- **2. 启动看板服务**：
+  ```bash
+  # 前台运行
+  ./run.sh
+
+  # 或后台守护运行 (退出终端不中断)
+  nohup ./run.sh > monitor.log 2>&1 &
+  ```
+- **3. 手动执行一次全量数据聚合**：
+  ```bash
+  ./aggregate_data.sh
+  ```
+- **4. 生产环境 Systemd 系统服务 (开机自启)**：
+  将 [ashare_monitor.service](file:///E:/Antigravity%20ex_project/ashare_monitor/ashare_monitor.service) 复制到 `/etc/systemd/system/` 并启动：
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now ashare_monitor
+  sudo systemctl status ashare_monitor
+  ```
+- **5. Docker / Docker Compose 一键运行**：
+  ```bash
+  docker compose up -d
+  ```
 
 ---
 

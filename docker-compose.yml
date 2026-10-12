@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  ashare_monitor:
+    build: .
+    container_name: ashare_monitor
+    restart: always
+    ports:
+      - "8099:8099"
+    environment:
+      - TZ=Asia/Shanghai
+      - HOST=0.0.0.0
+      - PORT=8099
+    volumes:
+      - ./ashare_data.db:/app/ashare_data.db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

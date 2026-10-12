@@ -1,0 +1,21 @@
+[Unit]
+Description=A-Share Market Monitor Service (FastAPI & Quant Pipeline)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ashare_monitor
+ExecStart=/opt/ashare_monitor/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+Environment=HOST=0.0.0.0
+Environment=PORT=8099
+Environment=PYTHONUNBUFFERED=1
+
+# 日志配置
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

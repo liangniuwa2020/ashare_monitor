@@ -51,6 +51,9 @@ if __name__ == "__main__":
     scheduler.start()
     logger.info("APScheduler 工作时间实时监控引擎已启动，工作时间调度周期：1 分钟。")
 
-    # 启动 FastAPI Web 生产服务，运行于 8099 端口
-    logger.info("正在启动 A 股全息监控与投研看板，访问地址: http://127.0.0.1:8099")
-    uvicorn.run("api.server:app", host="127.0.0.1", port=8099, log_level="info")
+    # 启动 FastAPI Web 生产服务，运行于 8099 端口 (支持通过环境变量 HOST/PORT 自定义，便于 Linux 与 Docker 远程访问)
+    import os
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8099"))
+    logger.info(f"正在启动 A 股全息监控与投研看板，访问地址: http://{host}:{port}")
+    uvicorn.run("api.server:app", host=host, port=port, log_level="info")
