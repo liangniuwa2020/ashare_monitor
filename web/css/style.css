@@ -566,3 +566,28 @@ tr:hover td {
   flex-direction: column;
   gap: 4px;
 }
+
+/* Stock Modal Sector Chips & Scrollbar */
+#stock-sectors-chips::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+#stock-sectors-chips::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 4px;
+}
+#stock-sectors-chips::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+#stock-sectors-chips::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.sector-chip {
+  user-select: none;
+  font-family: inherit;
+}
+.sector-chip:hover {
+  filter: brightness(1.15);
+}

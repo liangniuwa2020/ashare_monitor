@@ -2,6 +2,7 @@ import json
 import logging
 import urllib.request
 import re
+import time
 from collectors.base import BaseCollector
 
 logger = logging.getLogger("CollectorEastmoney")
@@ -11,6 +12,9 @@ class EastmoneyCollector(BaseCollector):
 
     def __init__(self):
         super().__init__(min_interval=0.25)
+        self._industry_codes = None
+        self._industry_codes_time = 0
+        self._stock_sectors_cache = {}
 
     def get_dragon_tiger_list(self, page=1, page_size=20):
         """龙虎榜每日机构与游资成交席位明细"""
@@ -237,6 +241,137 @@ class EastmoneyCollector(BaseCollector):
         # 优先把带有详尽入选理由的核心题材排在前面
         themes.sort(key=lambda x: (1 if x["reason"] else 0, len(x["reason"])), reverse=True)
         return themes
+
+    def _get_industry_codes(self):
+        """获取东财及主流行业板块集合"""
+        return {
+            "白酒", "啤酒", "黄酒", "红酒", "银行", "证券", "保险", "半导体", "房地产", "中药", "医药商业",
+            "生物制品", "医疗器械", "医疗服务", "电力行业", "煤炭行业", "钢铁行业", "汽车整车", "汽车零部件",
+            "光伏设备", "电池", "电网设备", "通信设备", "通信服务", "计算机设备", "软件开发", "互联网服务",
+            "消费电子", "光学光电子", "工程机械", "有色金属", "贵金属", "农牧饲渔", "食品饮料", "化学制药",
+            "通用设备", "专用设备", "航天航空", "铁路公路", "航运港口", "装修建材", "旅游酒店", "采掘行业",
+            "石油行业", "非金属材料", "燃气", "环保行业", "农药兽药", "化学制品", "造纸印刷", "纺织服装",
+            "化纤行业", "塑料制品", "橡胶制品", "仪器仪表", "工程咨询服务", "包装材料", "教育", "文化传媒",
+            "游戏", "专业服务", "多元金融", "电子元件", "交运设备", "电机", "能源金属", "商业百货"
+        }
+
+    def get_stock_sectors_with_quotes(self, stock_code):
+        """
+        获取个股所属的所有板块列表（行业、概念、地域、指数）以及各个板块当前的实时涨跌幅与领涨股
+        """
+        raw_code = str(stock_code).strip()
+        clean_code = "".join(filter(str.isdigit, raw_code))[-6:]
+        if not clean_code:
+            return []
+
+        # 内存缓存 (10秒内有效，保障高频点击极速响应)
+        now = time.time()
+        cached = self._stock_sectors_cache.get(clean_code)
+        if cached and (now - cached.get("time", 0) < 10):
+            return cached.get("data", [])
+
+        try:
+            # 1. 查询个股所属全部题材与板块 (东财官方核心题材库)
+            url_theme = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+            params = {
+                "reportName": "RPT_F10_CORETHEME_BOARDTYPE",
+                "columns": "SECUCODE,SECURITY_CODE,BOARD_CODE,BOARD_NAME,SELECTED_BOARD_REASON",
+                "filter": f'(SECURITY_CODE="{clean_code}")',
+                "pageNumber": 1,
+                "pageSize": 80
+            }
+            res = self.get_json(url_theme, params=params)
+            items = res.get("result", {}).get("data", []) if res and res.get("result") else []
+            if not items:
+                return []
+
+            ind_codes = self._get_industry_codes()
+            regions = {"北京", "天津", "上海", "重庆", "河北", "山西", "辽宁", "吉林", "黑龙江", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "海南", "四川", "贵州", "云南", "陕西", "甘肃", "青海", "台湾", "内蒙古", "广西", "西藏", "宁夏", "新疆", "香港", "澳门"}
+
+            secids = []
+            board_dict = {}
+            for it in items:
+                bcode = str(it.get("BOARD_CODE") or "").strip()
+                bname = str(it.get("BOARD_NAME") or "").strip()
+                reason = (it.get("SELECTED_BOARD_REASON") or "").strip()
+                if not bcode or not bname:
+                    continue
+
+                clean_bcode = f"BK{bcode.zfill(4)}" if not bcode.startswith("BK") else bcode
+
+                # 识别板块类别
+                if bname in ind_codes or clean_bcode in ind_codes or bname.endswith("行业") or (bname.endswith("业") and not bname.endswith("企业")):
+                    btype = "行业"
+                elif any(bname.startswith(reg) or bname == f"{reg}板块" or bname.endswith(f"{reg}板块") for reg in regions):
+                    btype = "地域"
+                elif any(k in bname for k in ["指数", "HS300", "沪深300", "中证", "上证", "标普", "富时", "MSCI", "AH股", "成份股", "权重股"]):
+                    btype = "指数/权重"
+                else:
+                    btype = "概念"
+
+                secids.append(f"90.{clean_bcode}")
+                board_dict[clean_bcode] = {
+                    "code": clean_bcode,
+                    "name": bname,
+                    "type": btype,
+                    "reason": reason
+                }
+
+            # 2. 批量拉取所有板块当前的实时涨跌幅与领涨股
+            quotes_map = {}
+            if secids:
+                chunk_size = 50
+                for i in range(0, len(secids), chunk_size):
+                    chunk = secids[i:i + chunk_size]
+                    url_batch = f"https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&secids={','.join(chunk)}&fields=f12,f14,f2,f3,f4,f62,f128"
+                    qb = self.get_json(url_batch)
+                    diff = qb.get("data", {}).get("diff", []) if qb and qb.get("data") else []
+                    for d in diff:
+                        c = d.get("f12")
+                        if c:
+                            quotes_map[c] = d
+
+            # 3. 组装结果列表
+            result_list = []
+            for bcode, binfo in board_dict.items():
+                qd = quotes_map.get(bcode, {})
+                chg = qd.get("f3")
+                chg_val = float(chg) if (chg is not None and chg != "-") else 0.0
+                curr_idx = qd.get("f2")
+                curr_idx_val = float(curr_idx) if (curr_idx is not None and curr_idx != "-") else 0.0
+                chg_amt = qd.get("f4")
+                chg_amt_val = float(chg_amt) if (chg_amt is not None and chg_amt != "-") else 0.0
+
+                result_list.append({
+                    "code": bcode,
+                    "name": binfo["name"],
+                    "type": binfo["type"],
+                    "change_percent": round(chg_val, 2),
+                    "current_index": round(curr_idx_val, 2),
+                    "change_amount": round(chg_amt_val, 2),
+                    "net_inflow": qd.get("f62", 0.0),
+                    "leader_name": qd.get("f128") or "--",
+                    "reason": binfo["reason"]
+                })
+
+            # 4. 排序规则：行业优先 -> 概念 -> 地域 -> 指数；且同类别中有理由的优先、涨跌幅高者在前
+            def sort_key(x):
+                type_priority = {"行业": 0, "概念": 1, "地域": 2, "指数/权重": 3}.get(x["type"], 4)
+                has_reason_priority = 0 if x["reason"] else 1
+                return (type_priority, has_reason_priority, -x["change_percent"])
+
+            result_list.sort(key=sort_key)
+
+            # 写入缓存
+            self._stock_sectors_cache[clean_code] = {
+                "time": now,
+                "data": result_list
+            }
+
+            return result_list
+        except Exception as e:
+            logger.error(f"获取股票 {stock_code} 所属板块及实时涨跌幅失败: {e}")
+            return []
 
     def get_stock_dragon_tiger_records(self, stock_code, limit=5):
         """获取近期龙虎榜上榜明细与异动原因"""

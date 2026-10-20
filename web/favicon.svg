@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0b0f19"/>
+    </linearGradient>
+    <linearGradient id="trendLine" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)" stroke="#334155" stroke-width="2"/>
+  <!-- K-Lines -->
+  <line x1="16" y1="30" x2="16" y2="46" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+  <rect x="13.5" y="34" width="5" height="8" rx="1" fill="#10b981"/>
+  <line x1="28" y1="20" x2="28" y2="44" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+  <rect x="25.5" y="24" width="5" height="12" rx="1" fill="#ef4444"/>
+  <line x1="40" y1="14" x2="40" y2="38" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+  <rect x="37.5" y="17" width="5" height="11" rx="1" fill="#ef4444"/>
+  <!-- Trend Golden Line -->
+  <polyline points="14,40 26,30 38,20 52,12" fill="none" stroke="url(#trendLine)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="52,8 55,16 47,13" fill="#f59e0b"/>
+</svg>

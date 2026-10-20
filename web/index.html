@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>A股全息信息收集与监控系统 - 量化龙头作战看板</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/css/style.css">
     <!-- ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
@@ -22,6 +23,7 @@
             <!-- 模块功能切换导航 -->
             <div style="display: flex; gap: 8px; margin-right: 12px;">
                 <button class="primary-btn" id="nav-btn-cockpit" onclick="switchMainView('cockpit')">📊 市场监控看板</button>
+                <button class="chart-tab-btn" id="nav-btn-etf" onclick="switchMainView('etf')">💰 宽基ETF与证金汇金持仓</button>
                 <button class="chart-tab-btn" id="nav-btn-guorn" onclick="switchMainView('guorn')">🧭 果仁市场风向标与情绪择时</button>
                 <button class="chart-tab-btn" id="nav-btn-valuation" onclick="switchMainView('valuation')">📈 板块历史PB/PE多板块对比</button>
             </div>
@@ -717,6 +719,515 @@
         </div>
     </div>
 
+    <!-- 主视图 4: 全市场宽基 ETF 资金流动监控与汇总看板 -->
+    <div class="container" id="view-etf" style="display:none; flex-direction:column; gap:20px; padding:20px 28px;">
+        <!-- 1. 宽基 ETF 资金风向标与宏观概览卡片 -->
+        <div class="card-box" style="border: 1px solid #3b82f6; background: radial-gradient(circle at top right, #1e1b4b 0%, #0f172a 80%);">
+            <div class="section-head" style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <div class="section-title" style="font-size: 19px;">
+                        <span>💰</span> 全市场宽基 ETF 资金净流入/流出监控大盘
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">
+                        实时监测主力大单/国家队托底方向 · 沪深300/中证A500/上证50/中证1000/科创创业板等核心指数资金分歧与共振
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span id="etf-market-style-tag" class="tag" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.4);">
+                        风格研判: 载入中...
+                    </span>
+                    <button class="primary-btn" onclick="loadBroadEtfFlows()" style="padding: 6px 14px; font-size: 12px;">
+                        🔄 刷新 ETF 数据
+                    </button>
+                </div>
+            </div>
+
+            <!-- 核心概览指标行 -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 10px;">
+                <div class="stat-metric-card" style="border-left: 4px solid #ef4444; background: rgba(15, 23, 42, 0.7);">
+                    <div style="font-size: 12px; color: #94a3b8;">全市场宽基主力净流入</div>
+                    <div id="metric-etf-total-flow" style="font-size: 22px; font-weight: 800; color: #ef4444;">-- 亿元</div>
+                    <div id="metric-etf-sentiment-desc" style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">--</div>
+                </div>
+                <div class="stat-metric-card" style="border-left: 4px solid #3b82f6; background: rgba(15, 23, 42, 0.7);">
+                    <div style="font-size: 12px; color: #94a3b8;">宽基 ETF 今日总成交额</div>
+                    <div id="metric-etf-total-amount" style="font-size: 22px; font-weight: 800; color: #38bdf8;">-- 亿元</div>
+                    <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">头部流动性代表标的</div>
+                </div>
+                <div class="stat-metric-card" style="border-left: 4px solid #10b981; background: rgba(15, 23, 42, 0.7);">
+                    <div style="font-size: 12px; color: #94a3b8;">大盘权重 ETF 净流入</div>
+                    <div id="metric-etf-large-flow" style="font-size: 20px; font-weight: 700; color: #e2e8f0;">-- 亿元</div>
+                    <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">300/50/A500/A50</div>
+                </div>
+                <div class="stat-metric-card" style="border-left: 4px solid #f59e0b; background: rgba(15, 23, 42, 0.7);">
+                    <div style="font-size: 12px; color: #94a3b8;">成长/中小盘 ETF 净流入</div>
+                    <div id="metric-etf-growth-flow" style="font-size: 20px; font-weight: 700; color: #e2e8f0;">-- 亿元</div>
+                    <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">1000/2000/科创/创业板</div>
+                </div>
+                <div class="stat-metric-card" style="border-left: 4px solid #8b5cf6; background: rgba(15, 23, 42, 0.7);">
+                    <div style="font-size: 12px; color: #94a3b8;">红绿流入比 (净买/净卖)</div>
+                    <div id="metric-etf-ratio" style="font-size: 20px; font-weight: 700; color: #e2e8f0;">-- / --</div>
+                    <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">多空阵营比例对比</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1.5 宽基流入流出历史 K 线联动全景图 (上层K线+均线，下层资金净流入柱+累计流入折线) -->
+        <div class="card-box" style="border: 1px solid #3b82f6;">
+            <div class="section-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                <div>
+                    <div class="section-title" style="font-size: 16px;">
+                        <span>📈</span> <span id="etf-kline-title">沪深300ETF (510300) - 历史K线与资金净流入流出联动分析</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 3px;">
+                        上区：日K线、MA5/MA10/MA20均线 · 下区：每日主力净买卖柱状图 (红流入/绿流出) + 主力累计资金沉淀曲线
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <!-- 宽基切换 -->
+                    <select id="select-etf-kline-code" class="custom-select" onchange="changeEtfKlineTarget(this.value)" style="font-weight:600; min-width:240px;">
+                        <option value="ALL_BROAD" selected style="background:#1e1b4b; color:#fbbf24; font-weight:700;">🌟 【全市场宽基总合流向】细分50/300/500/1000/2000/科创/创业板</option>
+                        <optgroup label="核心大盘宽基">
+                            <option value="510300">华泰柏瑞沪深300ETF (510300)</option>
+                            <option value="159338">国泰中证A500ETF (159338)</option>
+                            <option value="563360">华泰柏瑞中证A500ETF (563360)</option>
+                            <option value="510050">华夏上证50ETF (510050)</option>
+                            <option value="510500">南方中证500ETF (510500)</option>
+                            <option value="560350">易方达中证A50ETF (560350)</option>
+                        </optgroup>
+                        <optgroup label="科技与成长宽基">
+                            <option value="512100">南方中证1000ETF (512100)</option>
+                            <option value="563300">华泰柏瑞中证2000ETF (563300)</option>
+                            <option value="159915">易方达创业板ETF (159915)</option>
+                            <option value="588000">华夏科创50ETF (588000)</option>
+                            <option value="588190">银华科创100ETF (588190)</option>
+                        </optgroup>
+                    </select>
+
+                    <!-- 周期与跨度选择 -->
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">周期:</span>
+                        <button class="chart-tab-btn active" id="btn-etf-period-day" onclick="changeEtfKlinePeriod('day')">日K (2015-至今)</button>
+                        <button class="chart-tab-btn" id="btn-etf-period-week" onclick="changeEtfKlinePeriod('week')">周K (10年)</button>
+                        <button class="chart-tab-btn" id="btn-etf-period-month" onclick="changeEtfKlinePeriod('month')">月K (10年大周期)</button>
+                    </div>
+
+                    <!-- 快速区间缩放按钮 -->
+                    <div style="display:flex; gap:5px; align-items:center;">
+                        <span style="font-size: 12px; color: #94a3b8">视野:</span>
+                        <button class="chart-tab-btn" onclick="zoomEtfKlineFast('half_year')">近半年</button>
+                        <button class="chart-tab-btn" onclick="zoomEtfKlineFast('1_year')">1年</button>
+                        <button class="chart-tab-btn" onclick="zoomEtfKlineFast('3_year')">3年</button>
+                        <button class="chart-tab-btn active" id="btn-etf-zoom-all" onclick="zoomEtfKlineFast('all')">10年全部</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 全市场宽基总合流向细分汇总横向数据卡片 (50, 300, 500, 1000, 2000, 科创, 创业板, A500) -->
+            <div id="etf-breakdown-summary-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px; border: 1px dashed #334155;">
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #f97316;">
+                    <div style="font-size: 11px; color: #94a3b8;">上证50 累计</div>
+                    <div id="stat-etf-50" style="font-size: 15px; font-weight: 700; color: #f97316;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #ef4444;">
+                    <div style="font-size: 11px; color: #94a3b8;">沪深300 累计</div>
+                    <div id="stat-etf-300" style="font-size: 15px; font-weight: 700; color: #ef4444;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #eab308;">
+                    <div style="font-size: 11px; color: #94a3b8;">中证500 累计</div>
+                    <div id="stat-etf-500" style="font-size: 15px; font-weight: 700; color: #eab308;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #10b981;">
+                    <div style="font-size: 11px; color: #94a3b8;">中证1000 累计</div>
+                    <div id="stat-etf-1000" style="font-size: 15px; font-weight: 700; color: #10b981;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #06b6d4;">
+                    <div style="font-size: 11px; color: #94a3b8;">中证2000 累计</div>
+                    <div id="stat-etf-2000" style="font-size: 15px; font-weight: 700; color: #06b6d4;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #8b5cf6;">
+                    <div style="font-size: 11px; color: #94a3b8;">科创(50+100)</div>
+                    <div id="stat-etf-kc" style="font-size: 15px; font-weight: 700; color: #8b5cf6;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #ec4899;">
+                    <div style="font-size: 11px; color: #94a3b8;">创业板指 累计</div>
+                    <div id="stat-etf-cyb" style="font-size: 15px; font-weight: 700; color: #ec4899;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.6); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">
+                    <div style="font-size: 11px; color: #94a3b8;">中证A500 累计</div>
+                    <div id="stat-etf-a500" style="font-size: 15px; font-weight: 700; color: #3b82f6;">-- 亿</div>
+                </div>
+                <div style="background: rgba(30, 41, 59, 0.8); padding: 6px 10px; border-radius: 6px; border-left: 3px solid #fbbf24;">
+                    <div style="font-size: 11px; color: #fbbf24; font-weight: 700;">🌟 宽基总合累计</div>
+                    <div id="stat-etf-grand" style="font-size: 16px; font-weight: 800; color: #fbbf24;">-- 亿</div>
+                </div>
+            </div>
+
+            <!-- 数据说明提示 -->
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                <span>💡 <b>统计周期：</b>价格与行情完整覆盖 <b>2015年至今 10 年</b>历史大周期；主力资金高频流向自动呈现交易所/东财最长 120 交易日逐日精准流向。</span>
+                <span id="etf-chart-date-badge" style="color: #38bdf8; font-weight: 600;"></span>
+            </div>
+
+            <!-- ECharts 历史K线与资金流入流出图表容器 -->
+            <div id="etf-kline-flow-chart" style="width: 100%; height: 530px;"></div>
+        </div>
+
+        <!-- 2. 可视化图表区: 各大指数资金净流入柱状对比图 & 成交体量分布 -->
+        <div style="display: grid; grid-template-columns: 1.6fr 1.1fr; gap: 20px;">
+            <div class="card-box">
+                <div class="section-head" style="margin-bottom: 8px;">
+                    <div class="section-title" style="font-size: 15px;">
+                        <span>📊</span> 各大核心宽基指数资金净流入/流出对比 (亿元)
+                    </div>
+                </div>
+                <div id="etf-category-flow-chart" style="width: 100%; height: 350px;"></div>
+            </div>
+            <div class="card-box">
+                <div class="section-head" style="margin-bottom: 8px;">
+                    <div class="section-title" style="font-size: 15px;">
+                        <span>🥧</span> 宽基大类成交活跃度体量分布
+                    </div>
+                </div>
+                <div id="etf-category-amount-chart" style="width: 100%; height: 350px;"></div>
+            </div>
+        </div>
+
+        <!-- 3. 各大指数大类资金汇总表 -->
+        <div class="card-box">
+            <div class="section-head">
+                <div class="section-title" style="font-size: 16px;">
+                    <span>📑</span> 核心指数大类资金流向汇总一览
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>宽基指数大类</th>
+                            <th>覆盖核心标的数</th>
+                            <th>主力净流入/流出 (亿元)</th>
+                            <th>总成交额 (亿元)</th>
+                            <th>成分平均涨跌幅</th>
+                            <th>多空资金强弱度</th>
+                        </tr>
+                    </thead>
+                    <tbody id="etf-category-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 4. 全市场核心宽基 ETF 标的明细排行表 -->
+        <div class="card-box">
+            <div class="section-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div class="section-title" style="font-size: 16px;">
+                    <span>🔍</span> 核心宽基 ETF 个券资金流向排行榜
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="tab-btn active" id="etf-filter-all" onclick="filterEtfTable('all')">全部宽基</button>
+                    <button class="tab-btn" id="etf-filter-300" onclick="filterEtfTable('沪深300')">沪深300</button>
+                    <button class="tab-btn" id="etf-filter-a500" onclick="filterEtfTable('中证A500')">中证A500</button>
+                    <button class="tab-btn" id="etf-filter-50" onclick="filterEtfTable('上证50')">上证50</button>
+                    <button class="tab-btn" id="etf-filter-1000" onclick="filterEtfTable('中证1000')">中证1000</button>
+                    <button class="tab-btn" id="etf-filter-tech" onclick="filterEtfTable('科创/创业')">科创/创业板</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>代码</th>
+                            <th>基金简称</th>
+                            <th>标的指数</th>
+                            <th style="cursor:pointer;" onclick="sortEtfTable('price')">现价 ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortEtfTable('change_pct')">涨跌幅 ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortEtfTable('net_flow_yi')">主力净流入(亿元) ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortEtfTable('amount_yi')">成交额(亿元) ⇅</th>
+                            <th>外盘 (主动买手)</th>
+                            <th>内盘 (主动卖手)</th>
+                            <th>走势穿透</th>
+                        </tr>
+                    </thead>
+                    <tbody id="etf-items-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 5. 🌟 证金汇金随时间变化持仓总量与市值演变看板 (2015年至今 · 亿元/万亿元) -->
+        <div class="card-box" style="border: 1px solid #eab308; background: radial-gradient(circle at top right, #362808 0%, #0f172a 75%);">
+            <div class="section-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                <div>
+                    <div class="section-title" style="font-size: 18px; color: #fbbf24;">
+                        <span>👑</span> 证金汇金随时间变化持仓总量演变全景 (2015年至今)
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">
+                        全景统计自 2015 年三季报“国家队救市建仓”至今每个季度报告期的证金汇金合计持仓总市值（亿元 / 万亿元）、持仓总股份数量（亿股）与重仓股票总只数
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span id="huijin-total-badge" class="tag" style="background:rgba(234,179,8,0.2); color:#fde047; font-size:12px; padding:4px 10px; border:1px solid rgba(234,179,8,0.4);">
+                        统计跨度: 2015年至今 (共46个季度报告期)
+                    </span>
+                    <button class="primary-btn" onclick="loadHuijinTotalHistory(true)" style="padding: 6px 14px; font-size: 12px;">
+                        🔄 刷新持仓总量
+                    </button>
+                </div>
+            </div>
+
+            <!-- 核心概念口径对比释义提示条 -->
+            <div style="margin-bottom: 14px; background: rgba(30, 41, 59, 0.7); border-left: 4px solid #f59e0b; padding: 10px 14px; border-radius: 4px; font-size: 12px; line-height: 1.6; color: #cbd5e1;">
+                <div style="font-weight: 700; color: #fbbf24; margin-bottom: 2px;">
+                    💡 为什么国家队 2026年1月传闻“减持约1万亿”，而本表仍显示 4.8 万亿？【统计口径深度剖析】
+                </div>
+                <div>
+                    • <b>【1月减持约1万亿口径】</b>：指的是国家队在 2024~2025 年为防范市场超跌而突击买入的 <b>“宽基 ETF 逆周期波段调仓筹码”</b>（峰值达 1.53 万亿）。2026 年初大盘急涨突破 4100 点，国家队为了降温防泡沫，集中赎回减持了约 1.02 万亿宽基 ETF。<br>
+                    • <b>【本表 4.8 万亿口径】</b>：指的是证金公司与汇金公司持有的 <b>“A股上市公司股权战略底仓”</b>（工农中建交五大行、中车、券商及战略核心资产等长期控股股权）。这部分数万亿战略底仓<b>从不轻易二级市场抛售</b>，历经 10 年始终保持在 3~5 万亿元的基本盘。
+                </div>
+            </div>
+
+            <!-- 口径切换按钮 -->
+            <div style="display:flex; gap:8px; margin-bottom: 14px;">
+                <button class="chart-tab-btn active" id="btn-hj-view-stock" onclick="switchHuijinTotalView('stock')" style="font-size:13px; font-weight:700;">
+                    🏛️ 1. A股股票直接持仓底仓全景 (2015-至今 · 证金+汇金底仓)
+                </button>
+                <button class="chart-tab-btn" id="btn-hj-view-etf" onclick="switchHuijinTotalView('etf')" style="font-size:13px; font-weight:700;">
+                    🔥 2. 逆周期 ETF 专项调仓实录 (2025峰值1.53万亿 ➔ 2026年1月减持1万亿)
+                </button>
+            </div>
+
+            <!-- 视图 A: A股股票战略底仓演变 (默认显示) -->
+            <div id="huijin-view-stock-container">
+                <!-- 核心统计指标卡片 -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                    <div class="stat-metric-card" style="border-left: 4px solid #fbbf24; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">证金汇金底仓最新总市值</div>
+                        <div id="metric-hj-total-cap" style="font-size: 24px; font-weight: 800; color: #fbbf24;">-- 亿元</div>
+                        <div id="metric-hj-total-cap-wy" style="font-size: 12px; color: #fde047; margin-top: 2px;">约 -- 万亿元</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #38bdf8; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">证金汇金底仓最新总股数</div>
+                        <div id="metric-hj-total-shares" style="font-size: 24px; font-weight: 800; color: #38bdf8;">-- 亿股</div>
+                        <div id="metric-hj-total-shares-desc" style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">金融权重 + 核心龙头</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #f97316; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">汇金投资持仓市值 (亿元)</div>
+                        <div id="metric-hj-inv-cap" style="font-size: 20px; font-weight: 700; color: #f97316;">-- 亿元</div>
+                        <div id="metric-hj-inv-shares" style="font-size: 11px; color: #94a3b8; margin-top: 2px;">持股: -- 亿股</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #a855f7; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">汇金资管持仓市值 (亿元)</div>
+                        <div id="metric-hj-ast-cap" style="font-size: 20px; font-weight: 700; color: #a855f7;">-- 亿元</div>
+                        <div id="metric-hj-ast-shares" style="font-size: 11px; color: #94a3b8; margin-top: 2px;">持股: -- 亿股</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #06b6d4; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">证金公司持仓市值 (亿元)</div>
+                        <div id="metric-hj-zj-cap" style="font-size: 20px; font-weight: 700; color: #06b6d4;">-- 亿元</div>
+                        <div id="metric-hj-zj-shares" style="font-size: 11px; color: #94a3b8; margin-top: 2px;">持股: -- 亿股</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #10b981; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">最新前十大持仓股票只数</div>
+                        <div id="metric-hj-stock-count" style="font-size: 20px; font-weight: 700; color: #10b981;">-- 只</div>
+                        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">证金+汇金重仓合计</div>
+                    </div>
+                </div>
+
+                <!-- ECharts 证金汇金2015年至今总市值与总持股量双轴趋势大图 -->
+                <div style="margin-bottom: 16px; background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <div style="font-size: 14px; font-weight: 700; color: #e2e8f0;">
+                            📈 2015年至今证金汇金持仓总市值（亿元）与总股数（亿股）时序演变曲线
+                        </div>
+                        <div style="font-size: 11px; color: #94a3b8;">
+                            可使用图表下方滑动条自由缩放 2015 ~ 2026 年任意历史时间段
+                        </div>
+                    </div>
+                    <div id="huijin-total-trend-chart" style="width: 100%; height: 360px;"></div>
+                </div>
+
+                <!-- 证金汇金随时间变化持仓总量季度历史明细表 -->
+                <div style="margin-bottom: 8px; font-size: 14px; font-weight: 700; color: #fbbf24;">
+                    📋 证金汇金历年各季度持仓总量与市值汇总明细表 (从2015年至今 · 亿元 / 亿股)
+                </div>
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr style="position: sticky; top: 0; background: #1e293b; z-index: 2;">
+                                <th>报告期时间</th>
+                                <th>报告期名称</th>
+                                <th style="color:#fbbf24;">证金汇金合计市值 (亿元)</th>
+                                <th>折合万亿元</th>
+                                <th style="color:#ef4444;">市值环比增减 (亿元)</th>
+                                <th>市值环比增幅</th>
+                                <th style="color:#38bdf8;">持仓总股数 (亿股)</th>
+                                <th>股数环比增减 (亿股)</th>
+                                <th>汇金投资市值</th>
+                                <th>汇金资管市值</th>
+                                <th style="color:#06b6d4;">证金公司市值</th>
+                                <th>重仓股票只数</th>
+                            </tr>
+                        </thead>
+                        <tbody id="huijin-total-table-tbody">
+                            <tr>
+                                <td colspan="12" style="text-align:center; padding:25px; color:#38bdf8;">🔄 正在拉取 2015 年至今各季度证金汇金持仓总量数据...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 视图 B: 逆周期调节 ETF 专项仓位演变 (包含2026年1月集中减持1万亿全景实录) -->
+            <div id="huijin-view-etf-container" style="display: none;">
+                <!-- 核心对比指标 -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                    <div class="stat-metric-card" style="border-left: 4px solid #ef4444; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">2026年1月减持宽基ETF规模</div>
+                        <div style="font-size: 24px; font-weight: 800; color: #ef4444;">-10,200 亿元</div>
+                        <div style="font-size: 11px; color: #f87171; margin-top: 2px;">集中减持约 1.02 万亿元</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #fbbf24; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">2025年末ETF持仓峰值</div>
+                        <div style="font-size: 24px; font-weight: 800; color: #fbbf24;">15,300 亿元</div>
+                        <div style="font-size: 11px; color: #fde047; margin-top: 2px;">达到历史顶峰 1.53 万亿元</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #38bdf8; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">当前ETF常态留存仓位</div>
+                        <div style="font-size: 24px; font-weight: 800; color: #38bdf8;">约 3,800 亿元</div>
+                        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">大部分降至 20% 披露线以下</div>
+                    </div>
+                    <div class="stat-metric-card" style="border-left: 4px solid #10b981; background: rgba(15, 23, 42, 0.75);">
+                        <div style="font-size: 12px; color: #94a3b8;">减持核心目的与定性</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #10b981; margin-top: 4px;">平抑过热 · 引导慢牛</div>
+                        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">逆周期平准基金功成身退</div>
+                    </div>
+                </div>
+
+                <!-- ETF 专项时序图表 -->
+                <div style="margin-bottom: 16px; background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="font-size: 14px; font-weight: 700; color: #e2e8f0; margin-bottom: 8px;">
+                        📊 汇金国家队逆周期 ETF 专项仓位脉络图 (从1200亿 ➔ 狂飙至1.53万亿 ➔ 1月减持1万亿)
+                    </div>
+                    <div id="huijin-etf-trend-chart" style="width: 100%; height: 320px;"></div>
+                </div>
+
+                <!-- ETF 调仓明细表 -->
+                <div style="margin-bottom: 8px; font-size: 14px; font-weight: 700; color: #fbbf24;">
+                    📋 国家队宽基 ETF 逆周期专项操作时间轴全景表 (亿元)
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>报告期时间</th>
+                                <th>阶段阶段定位</th>
+                                <th>ETF 持仓总市值 (亿元)</th>
+                                <th>阶段增减额 (亿元)</th>
+                                <th>核心操作动向与政策背景</th>
+                                <th>主要增减标的</th>
+                            </tr>
+                        </thead>
+                        <tbody id="huijin-etf-table-tbody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. 🌟 证金汇金持仓数量增减明细与时间时序追踪看板 (证金公司 / 汇金投资 / 汇金资管) -->
+        <div class="card-box" style="border: 1px solid #f59e0b; background: radial-gradient(circle at top left, #292524 0%, #0f172a 80%);">
+            <div class="section-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                <div>
+                    <div class="section-title" style="font-size: 17px; color: #fbbf24;">
+                        <span>🏛️</span> 证金汇金持仓个股增减变动明细 (增持 / 减持 / 新进)
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">
+                        追踪“国家队”核心主力（中国证券金融股份有限公司、中央汇金投资有限责任公司、中央汇金资产管理有限责任公司）历次报告期持股增持、减持与新进动向
+                    </div>
+                </div>
+                <!-- 筛选与控制栏 -->
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <!-- 证金汇金主体选择 -->
+                    <select id="huijin-entity-select" class="custom-select" onchange="filterHuijinData()" style="font-size:12px; font-weight:600;">
+                        <option value="ALL" selected>全部国家队主力 (证金+汇金)</option>
+                        <option value="ZHENGJIN">中国证券金融股份有限公司 (证金)</option>
+                        <option value="INVEST">中央汇金投资有限责任公司</option>
+                        <option value="ASSET">中央汇金资产管理有限责任公司</option>
+                        <option value="HUIJIN_ALL">中央汇金合计 (投资+资管)</option>
+                    </select>
+
+                    <!-- 增减类型过滤 -->
+                    <div style="display:flex; gap:4px;">
+                        <button class="chart-tab-btn active" id="btn-hj-type-all" onclick="setHuijinChangeType('ALL')">全部增减</button>
+                        <button class="chart-tab-btn" id="btn-hj-type-inc" onclick="setHuijinChangeType('INC')">🔥 增持/新进</button>
+                        <button class="chart-tab-btn" id="btn-hj-type-add" onclick="setHuijinChangeType('ADD_ONLY')">增持</button>
+                        <button class="chart-tab-btn" id="btn-hj-type-new" onclick="setHuijinChangeType('NEW')">新进</button>
+                        <button class="chart-tab-btn" id="btn-hj-type-dec" onclick="setHuijinChangeType('DEC')">减持</button>
+                    </div>
+
+                    <!-- 报告期时间下拉菜单 -->
+                    <select id="huijin-period-select" class="custom-select" onchange="filterHuijinData()" style="font-size:12px; font-weight:600; min-width:140px;">
+                        <option value="" selected>全部历史报告期</option>
+                    </select>
+
+                    <!-- 股票搜索框 -->
+                    <input type="text" id="huijin-search-input" placeholder="输入代码或股票名称..." onkeydown="if(event.key==='Enter') filterHuijinData()" style="background:#1e293b; border:1px solid #334155; color:#f8fafc; padding:5px 10px; border-radius:4px; font-size:12px; width:150px;">
+                    <button class="primary-btn" onclick="filterHuijinData()" style="padding:5px 12px; font-size:12px;">🔍 筛选</button>
+                    <button class="chart-tab-btn" onclick="resetHuijinFilter()" style="padding:5px 10px; font-size:12px;">重置</button>
+                </div>
+            </div>
+
+            <!-- 时间轴汇总柱状概览条 (点击时间可直接切入该报告期) -->
+            <div style="margin-bottom: 12px; background: rgba(15, 23, 42, 0.7); border: 1px dashed #475569; border-radius: 6px; padding: 10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:12px; font-weight:700; color:#38bdf8;">📅 历次报告期汇金增减频次时序总览 (点击标签快速定位):</span>
+                    <span id="huijin-timeline-count-badge" style="font-size:11px; color:#94a3b8;">共统计到 -- 个报告期</span>
+                </div>
+                <div id="huijin-timeline-chips" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;">
+                    <span style="color:#64748b; font-size:12px;">加载时序中...</span>
+                </div>
+            </div>
+
+            <!-- 汇金持仓数量增减明细数据表 -->
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('end_date')">报告期时间 ⇅</th>
+                            <th>股票代码</th>
+                            <th>股票名称</th>
+                            <th>汇金主体</th>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('change_type')">增减变动类型 ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('change_shares')">增减股数 (万/亿股) ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('change_ratio')">变动比例 ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('hold_shares')">期末持股数量 ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('hold_ratio')">占流通股比 ⇅</th>
+                            <th style="cursor:pointer;" onclick="sortHuijinTable('market_cap')">期末持股市值 (亿元) ⇅</th>
+                            <th>穿透分析</th>
+                        </tr>
+                    </thead>
+                    <tbody id="huijin-table-tbody">
+                        <tr>
+                            <td colspan="11" style="text-align:center; padding:20px; color:#94a3b8;">载入汇金持仓增减数据中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 分页与统计控制栏 -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:12px; color:#94a3b8; flex-wrap:wrap; gap:10px;">
+                <div>
+                    当前展示: <span id="huijin-showing-range" style="color:#f8fafc; font-weight:600;">--</span> 条 / 共筛选到 <span id="huijin-total-count" style="color:#f59e0b; font-weight:700;">--</span> 条增减明细
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button class="chart-tab-btn" id="btn-hj-prev-page" onclick="changeHuijinPage(-1)" disabled>◀ 上一页</button>
+                    <span id="huijin-page-indicator" style="color:#e2e8f0; font-weight:600; padding:0 6px;">第 1 页</span>
+                    <button class="chart-tab-btn" id="btn-hj-next-page" onclick="changeHuijinPage(1)">下一页 ▶</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 板块成分股与全量股票穿透弹窗 (支持查看所有后排股票) -->
     <div class="modal-backdrop" id="sector-modal" onclick="if(event.target === this) closeSectorModal()">
         <div class="modal-content">
@@ -775,6 +1286,31 @@
                     <!-- 动态注入股票名称、代码、现价、涨跌幅、成交额等 -->
                 </div>
                 <button class="close-btn" onclick="closeStockChartModal()">✕</button>
+            </div>
+
+            <!-- 个股所属板块及各板块实时涨跌幅全景展示区 -->
+            <div id="stock-sectors-box" style="margin: 8px 0 10px 0; padding: 10px 14px; background: rgba(15, 23, 42, 0.75); border: 1px solid #1e293b; border-radius: 8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="font-size:13px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:5px;">
+                            <span>🏷️</span> 所属板块 <span id="stock-sectors-count-badge" style="background:#1e293b; color:#94a3b8; font-size:11px; padding:1px 6px; border-radius:10px; border:1px solid #334155;">(0)</span>
+                        </span>
+                        <!-- 板块分类快捷过滤 -->
+                        <div id="stock-sectors-filter-tabs" style="display:inline-flex; gap:4px; font-size:11px;">
+                            <!-- 动态生成: 全部 / 行业 / 概念 / 地域 / 指数 -->
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:11px; color:#64748b;">* 点击板块可联动穿透查看成分股与行情</span>
+                        <button id="stock-sectors-toggle-btn" class="chart-tab-btn" onclick="toggleStockSectorsExpanded()" style="display:none; padding:2px 8px; font-size:11px; height:24px; line-height:20px;">
+                            展开全部 ▼
+                        </button>
+                    </div>
+                </div>
+                <!-- 各板块Chip标签容器 -->
+                <div id="stock-sectors-chips" style="display:flex; flex-wrap:wrap; gap:6px; max-height:86px; overflow-y:auto; transition:max-height 0.25s ease;">
+                    <div style="color:#64748b; font-size:12px; padding:4px 0;">正在检索所属板块及实时涨跌幅...</div>
+                </div>
             </div>
 
             <!-- 图表类型与周期切换: 即时分时图 vs 日K线 / 周K线 / 月K线 / 年K线 vs 备注（人气与热度分析） -->

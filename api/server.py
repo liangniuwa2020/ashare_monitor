@@ -765,18 +765,47 @@ def get_stock_chart_data(
     code: str = Query(..., description="股票代码，如 600519"),
     period: str = Query("day", description="K线周期: day(日线), week(周线), month(月线), year(年线)")
 ):
-    """返回单只股票指定周期K线（日/周/月/年）历史序列与今日即时分时数据"""
+    """返回单只股票指定周期K线（日/周/月/年）历史序列与今日即时分时数据，附带所属板块列表及板块实时涨跌幅"""
     kline = tencent_collector.get_kline_data(code, period=period, limit=120)
     minute = tencent_collector.get_intraday_minute(code)
     quote = tencent_collector.get_realtime_quotes([code]).get(code, {})
+    try:
+        sectors = eastmoney_collector.get_stock_sectors_with_quotes(code)
+    except Exception as e:
+        logger.error(f"获取股票 {code} 所属板块及涨跌幅失败: {e}")
+        sectors = []
+
     return {
         "status": "success",
         "code": code,
         "period": period,
         "quote": quote,
         "kline": kline,
-        "minute": minute
+        "minute": minute,
+        "sectors": sectors
     }
+
+# 9.0 单只股票所属板块及当前板块实时涨跌幅列表独立接口
+@app.get("/api/stock/sectors")
+def get_stock_sectors(code: str = Query(..., description="股票代码，如 600519")):
+    """返回单只股票所属的全部板块列表及其当前板块实时涨跌幅与领涨龙头"""
+    try:
+        sectors = eastmoney_collector.get_stock_sectors_with_quotes(code)
+        return {
+            "status": "success",
+            "code": code,
+            "total": len(sectors),
+            "sectors": sectors
+        }
+    except Exception as e:
+        logger.error(f"获取股票 {code} 所属板块及实时涨跌幅异常: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "code": code,
+            "total": 0,
+            "sectors": []
+        }
 
 # 9.1 单只股票高人气/高热度原因多维全景深度归因分析
 @app.get("/api/stock/popularity_reason")
@@ -1260,3 +1289,76 @@ def index_page():
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {"message": "A-Share Monitor API is running. UI is initializing..."}
+
+from core.etf_analyzer import fetch_broad_etf_flows, fetch_etf_kline_with_flow, fetch_all_broad_aggregated_kline_flow, fetch_huijin_holding_changes
+
+# 13. 全市场宽基 ETF 资金流动监控与汇总接口
+@app.get("/api/market/etf_flows")
+def get_etf_flows():
+    try:
+        data = fetch_broad_etf_flows()
+        return data
+    except Exception as e:
+        logger.error(f"Error getting ETF flows: {e}")
+        return {"status": "error", "message": str(e), "categories": [], "items": []}
+
+# 14. 宽基 ETF 历史K线与资金流入流出联动接口 (取最大时长 limit=120)
+@app.get("/api/market/etf_kline")
+def get_etf_kline(code: str = Query("510300"), period: str = Query("day"), limit: int = Query(120)):
+    try:
+        if code == "ALL_BROAD":
+            data = fetch_all_broad_aggregated_kline_flow(period, limit)
+        else:
+            data = fetch_etf_kline_with_flow(code, period, limit)
+        return data
+    except Exception as e:
+        logger.error(f"Error getting ETF kline: {e}")
+        return {"status": "error", "message": str(e)}
+
+from core.etf_analyzer import fetch_broad_etf_flows, fetch_etf_kline_with_flow, fetch_all_broad_aggregated_kline_flow, fetch_huijin_holding_changes, fetch_huijin_total_history
+
+# 15. 汇金持仓数量增减明细与时间时序表接口
+@app.get("/api/market/huijin_holdings")
+def get_huijin_holdings(
+    change_type: str = Query("ALL"),
+    report_date: str = Query(""),
+    entity: str = Query("ALL"),
+    keyword: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50)
+):
+    try:
+        data = fetch_huijin_holding_changes(
+            change_type=change_type,
+            report_date=report_date,
+            entity=entity,
+            keyword=keyword,
+            page=page,
+            page_size=page_size
+        )
+        return data
+    except Exception as e:
+        logger.error(f"Error getting Huijin holdings: {e}")
+        return {"status": "error", "message": str(e), "records": [], "timeline_summary": []}
+
+# 16. 汇金从 2015 年至今每个季度持仓总量与市值演变时序表接口
+@app.get("/api/market/huijin_total")
+def get_huijin_total(refresh: bool = Query(False)):
+    try:
+        data = fetch_huijin_total_history(force_refresh=refresh)
+        return data
+    except Exception as e:
+        logger.error(f"Error getting Huijin total history: {e}")
+        return {"status": "error", "message": str(e), "table_records": []}
+
+
+
+
+@app.get("/favicon.ico")
+def favicon():
+    fav_file = os.path.join(web_dir, "favicon.svg")
+    if os.path.exists(fav_file):
+        return FileResponse(fav_file, media_type="image/svg+xml")
+    return Response(status_code=404)
+
+

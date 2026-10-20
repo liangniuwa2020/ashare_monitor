@@ -21,6 +21,17 @@ let guornIntensityChartInstance = null;
 let currentGuornDomain = "all"; // 'all', 'hs300', 'zz500', 'cyb'
 let currentGuornIntensityHistory = [];
 
+// 全市场宽基 ETF 全局状态与图表实例
+let etfFlowChartInstance = null;
+let etfAmountChartInstance = null;
+let etfKlineFlowChartInstance = null;
+let currentEtfData = null;
+let currentEtfFilter = "all";
+let currentEtfSortField = "net_flow_yi";
+let currentEtfSortOrder = "desc";
+let currentEtfKlineCode = "ALL_BROAD";
+let currentEtfKlinePeriod = "day";
+
 document.addEventListener("DOMContentLoaded", () => {
     loadMarketHeatHistory(); // 优先载入页首全市场热度与历史热度图
     loadGuornSentiment(); // 载入果仁网大盘情绪温度计与量化择时
@@ -83,31 +94,45 @@ function formatMoney(amt) {
     return parseFloat(amt).toFixed(2);
 }
 
-// 视图切换: 市场看板 vs 果仁风向标与情绪择时 vs 板块估值对比
+// 视图切换: 市场看板 vs 宽基ETF资金流向 vs 果仁风向标与情绪择时 vs 板块估值对比
 function switchMainView(viewType) {
     const btnCockpit = document.getElementById("nav-btn-cockpit");
+    const btnEtf = document.getElementById("nav-btn-etf");
     const btnGuorn = document.getElementById("nav-btn-guorn");
     const btnValuation = document.getElementById("nav-btn-valuation");
 
     const viewCockpit = document.getElementById("view-cockpit");
+    const viewEtf = document.getElementById("view-etf");
     const viewGuorn = document.getElementById("view-guorn");
     const viewValuation = document.getElementById("view-valuation");
 
     // 重置所有导航按钮样式
-    btnCockpit.className = "chart-tab-btn";
+    if (btnCockpit) btnCockpit.className = "chart-tab-btn";
+    if (btnEtf) btnEtf.className = "chart-tab-btn";
     if (btnGuorn) btnGuorn.className = "chart-tab-btn";
-    btnValuation.className = "chart-tab-btn";
+    if (btnValuation) btnValuation.className = "chart-tab-btn";
 
     // 隐藏所有视图
-    viewCockpit.style.display = "none";
+    if (viewCockpit) viewCockpit.style.display = "none";
+    if (viewEtf) viewEtf.style.display = "none";
     if (viewGuorn) viewGuorn.style.display = "none";
-    viewValuation.style.display = "none";
+    if (viewValuation) viewValuation.style.display = "none";
 
     if (viewType === "cockpit") {
-        btnCockpit.className = "primary-btn";
-        viewCockpit.style.display = "flex";
+        if (btnCockpit) btnCockpit.className = "primary-btn";
+        if (viewCockpit) viewCockpit.style.display = "flex";
         setTimeout(() => {
             if (marketHeatChartInstance) marketHeatChartInstance.resize();
+        }, 80);
+    } else if (viewType === "etf") {
+        if (btnEtf) btnEtf.className = "primary-btn";
+        if (viewEtf) viewEtf.style.display = "flex";
+        loadBroadEtfFlows();
+        loadEtfKlineWithFlow(currentEtfKlineCode, currentEtfKlinePeriod);
+        setTimeout(() => {
+            if (etfFlowChartInstance) etfFlowChartInstance.resize();
+            if (etfAmountChartInstance) etfAmountChartInstance.resize();
+            if (etfKlineFlowChartInstance) etfKlineFlowChartInstance.resize();
         }, 80);
     } else if (viewType === "guorn") {
         if (btnGuorn) btnGuorn.className = "primary-btn";
@@ -119,8 +144,8 @@ function switchMainView(viewType) {
             if (guornSentimentChartInstance) guornSentimentChartInstance.resize();
         }, 80);
     } else if (viewType === "valuation") {
-        btnValuation.className = "primary-btn";
-        viewValuation.style.display = "flex";
+        if (btnValuation) btnValuation.className = "primary-btn";
+        if (viewValuation) viewValuation.style.display = "flex";
         renderValuationComparison();
         setTimeout(() => {
             if (valuationChartInstance) valuationChartInstance.resize();
@@ -2584,6 +2609,13 @@ function closeSectorModal() {
 // 6. 股票深度图表弹窗 (即时分时图 + 多周期K线: 日K / 周K / 月K / 年K + 备注: 人气与热度归因)
 let cachedStockChartData = null;
 let currentStockChartName = "";
+let currentStockSectors = [];
+let currentSectorFilter = "ALL";
+let isSectorsExpanded = false;
+
+window.openStockChart = function(stockCode, stockName) {
+    openStockChartModal(stockCode, stockName);
+};
 
 async function openStockChartModal(stockCode, stockName) {
     currentStockChartCode = stockCode;
@@ -2599,6 +2631,18 @@ async function openStockChartModal(stockCode, stockName) {
 
     currentStockChartType = "minute";
     updateStockChartTabUI("minute");
+
+    // 重置板块展示区域状态为加载中
+    const sectorContainer = document.getElementById("stock-sectors-chips");
+    const sectorBadge = document.getElementById("stock-sectors-count-badge");
+    const filterTabsContainer = document.getElementById("stock-sectors-filter-tabs");
+    const toggleBtn = document.getElementById("stock-sectors-toggle-btn");
+    if (sectorContainer) {
+        sectorContainer.innerHTML = `<div style="color:#64748b; font-size:12px; padding:4px 0;">正在检索个股所属板块及实时涨跌幅...</div>`;
+    }
+    if (sectorBadge) sectorBadge.innerText = "(...)";
+    if (filterTabsContainer) filterTabsContainer.innerHTML = "";
+    if (toggleBtn) toggleBtn.style.display = "none";
 
     document.getElementById("chart-stock-info").innerHTML = `
         <span style="font-size:20px; font-weight:700; color:#fff">${stockName} (${stockCode})</span>
@@ -2629,9 +2673,153 @@ async function openStockChartModal(stockCode, stockName) {
         `;
 
         renderStockChart();
+
+        // 渲染所属板块列表与各板块实时涨跌幅
+        if (json.sectors && json.sectors.length > 0) {
+            renderStockSectors(json.sectors);
+        } else {
+            // 如 chart_data 接口未带板块或空，则异步请求专属板块接口
+            fetchStockSectors(stockCode);
+        }
     } catch (e) {
         console.error("加载股票K线分时异常:", e);
+        fetchStockSectors(stockCode);
     }
+}
+
+async function fetchStockSectors(stockCode) {
+    try {
+        const res = await fetch(`/api/stock/sectors?code=${stockCode}`);
+        const json = await res.json();
+        if (json.status === "success" && json.sectors) {
+            renderStockSectors(json.sectors);
+        } else {
+            renderStockSectors([]);
+        }
+    } catch (e) {
+        console.error("加载所属板块失败:", e);
+        renderStockSectors([]);
+    }
+}
+
+function renderStockSectors(sectors) {
+    currentStockSectors = sectors || [];
+    currentSectorFilter = "ALL";
+    isSectorsExpanded = false;
+    updateStockSectorsUI();
+}
+
+function setStockSectorFilter(filterKey) {
+    currentSectorFilter = filterKey;
+    updateStockSectorsUI();
+}
+
+function toggleStockSectorsExpanded() {
+    isSectorsExpanded = !isSectorsExpanded;
+    updateStockSectorsUI();
+}
+
+function onSectorChipClick(sectorName, sectorCode) {
+    if (sectorName && typeof openSectorByName === "function") {
+        openSectorByName(sectorName, sectorCode);
+    }
+}
+
+function updateStockSectorsUI() {
+    const container = document.getElementById("stock-sectors-chips");
+    const countBadge = document.getElementById("stock-sectors-count-badge");
+    const filterTabsContainer = document.getElementById("stock-sectors-filter-tabs");
+    const toggleBtn = document.getElementById("stock-sectors-toggle-btn");
+    if (!container) return;
+
+    if (!currentStockSectors || currentStockSectors.length === 0) {
+        if (countBadge) countBadge.innerText = "(0)";
+        container.innerHTML = `<span style="color:#94a3b8; font-size:12px;">未检索到所属板块信息</span>`;
+        if (filterTabsContainer) filterTabsContainer.innerHTML = "";
+        if (toggleBtn) toggleBtn.style.display = "none";
+        return;
+    }
+
+    if (countBadge) countBadge.innerText = `(${currentStockSectors.length})`;
+
+    // 计算各类别板块统计
+    const counts = {
+        ALL: currentStockSectors.length,
+        "行业": currentStockSectors.filter(s => s.type === "行业").length,
+        "概念": currentStockSectors.filter(s => s.type === "概念").length,
+        "地域": currentStockSectors.filter(s => s.type === "地域").length,
+        "指数/权重": currentStockSectors.filter(s => s.type === "指数/权重").length,
+    };
+
+    // 渲染筛选按钮
+    if (filterTabsContainer) {
+        const tabs = [
+            { key: "ALL", label: `全部 (${counts.ALL})` },
+            ...(counts["行业"] ? [{ key: "行业", label: `行业 (${counts["行业"]})` }] : []),
+            ...(counts["概念"] ? [{ key: "概念", label: `概念 (${counts["概念"]})` }] : []),
+            ...(counts["地域"] ? [{ key: "地域", label: `地域 (${counts["地域"]})` }] : []),
+            ...(counts["指数/权重"] ? [{ key: "指数/权重", label: `指数/权重 (${counts["指数/权重"]})` }] : []),
+        ];
+
+        filterTabsContainer.innerHTML = tabs.map(t => {
+            const isActive = currentSectorFilter === t.key;
+            return `
+                <button onclick="setStockSectorFilter('${t.key}')" 
+                    style="background:${isActive ? '#2563eb' : '#1e293b'}; color:${isActive ? '#fff' : '#94a3b8'}; border:1px solid ${isActive ? '#3b82f6' : '#334155'}; border-radius:4px; padding:2px 7px; cursor:pointer; font-size:11px; font-weight:${isActive ? '700' : 'normal'}; transition:all 0.15s ease;">
+                    ${t.label}
+                </button>
+            `;
+        }).join("");
+    }
+
+    // 筛选板块列表
+    let filtered = currentStockSectors;
+    if (currentSectorFilter !== "ALL") {
+        filtered = currentStockSectors.filter(s => s.type === currentSectorFilter);
+    }
+
+    // 展开/收起按钮控制
+    if (toggleBtn) {
+        if (filtered.length > 12) {
+            toggleBtn.style.display = "inline-block";
+            toggleBtn.innerText = isSectorsExpanded ? "收起 ▲" : `展开全部 (${filtered.length}) ▼`;
+            container.style.maxHeight = isSectorsExpanded ? "260px" : "86px";
+        } else {
+            toggleBtn.style.display = "none";
+            container.style.maxHeight = "none";
+        }
+    }
+
+    // 渲染各个板块 Chip
+    container.innerHTML = filtered.map(s => {
+        const isUp = (s.change_percent || 0) > 0;
+        const isDown = (s.change_percent || 0) < 0;
+        const chgSign = isUp ? "+" : "";
+        const chgColor = isUp ? "#ef4444" : (isDown ? "#10b981" : "#94a3b8");
+        const borderColor = isUp ? "rgba(239, 68, 68, 0.35)" : (isDown ? "rgba(16, 185, 129, 0.35)" : "rgba(148, 163, 184, 0.2)");
+        const bgColor = isUp ? "rgba(239, 68, 68, 0.08)" : (isDown ? "rgba(16, 185, 129, 0.08)" : "rgba(30, 41, 59, 0.5)");
+
+        const typeBadgeStyle = {
+            "行业": "background:rgba(245, 158, 11, 0.2); color:#fbbf24; border:1px solid rgba(245, 158, 11, 0.4);",
+            "概念": "background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.3);",
+            "地域": "background:rgba(168, 85, 247, 0.15); color:#c084fc; border:1px solid rgba(168, 85, 247, 0.3);",
+            "指数/权重": "background:rgba(100, 116, 139, 0.2); color:#cbd5e1; border:1px solid rgba(100, 116, 139, 0.3);",
+        }[s.type] || "background:#334155; color:#cbd5e1;";
+
+        const tooltip = `板块: ${s.name} (${s.code})\n当前涨跌幅: ${chgSign}${s.change_percent}%\n领涨龙头: ${s.leader_name || '--'}${s.reason ? '\n\n入选理由:\n' + s.reason : ''}`;
+
+        return `
+            <div class="sector-chip" onclick="onSectorChipClick('${s.name}', '${s.code}')" title="${tooltip.replace(/"/g, '&quot;')}"
+                style="display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:6px; background:${bgColor}; border:1px solid ${borderColor}; cursor:pointer; transition:all 0.15s ease;"
+                onmouseover="this.style.transform='translateY(-1px)'; this.style.borderColor='#38bdf8'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.4)';"
+                onmouseout="this.style.transform='none'; this.style.borderColor='${borderColor}'; this.style.boxShadow='none';">
+                <span style="font-size:10px; padding:0 4px; border-radius:3px; ${typeBadgeStyle}">${s.type}</span>
+                <span style="font-size:12px; font-weight:600; color:#f1f5f9;">${s.name}</span>
+                <span style="font-size:12px; font-weight:700; color:${chgColor}; font-family:monospace;">${chgSign}${s.change_percent}%</span>
+                ${s.leader_name && s.leader_name !== '--' ? `<span style="font-size:10px; color:#94a3b8; opacity:0.85;">(领涨: ${s.leader_name})</span>` : ''}
+            </div>
+        `;
+    }).join("");
 }
 
 function closeStockChartModal() {
@@ -4015,3 +4203,1502 @@ async function refreshAllData() {
         btn.disabled = false;
     }
 }
+
+// ==========================================
+// 宽基 ETF 资金流动监控与汇总业务逻辑
+// ==========================================
+
+async function loadBroadEtfFlows() {
+    try {
+        const res = await fetch("/api/market/etf_flows");
+        const json = await res.json();
+        if (json.status !== "success") return;
+        currentEtfData = json;
+
+        renderEtfMacroOverview(json.macro_overview || {});
+        renderEtfCategoryCharts(json.categories || []);
+        renderEtfCategoryTable(json.categories || []);
+        renderEtfItemsTable(json.items || []);
+
+        // 加载汇金随时间变化持仓总量演变全景 (从2015年至今)
+        loadHuijinTotalHistory();
+
+        // 加载汇金持仓数量增减明细
+        loadHuijinHoldings();
+    } catch (e) {
+        console.error("加载宽基 ETF 资金流向失败:", e);
+    }
+}
+
+function renderEtfMacroOverview(overview) {
+    const tag = document.getElementById("etf-market-style-tag");
+    if (tag) {
+        tag.innerText = `风格研判: ${overview.market_style || '--'}`;
+    }
+
+    const flowEl = document.getElementById("metric-etf-total-flow");
+    if (flowEl) {
+        const total = overview.total_net_flow_yi || 0;
+        flowEl.innerText = `${total > 0 ? '+' : ''}${total} 亿元`;
+        flowEl.style.color = total >= 0 ? '#ef4444' : '#10b981';
+    }
+
+    const sentDescEl = document.getElementById("metric-etf-sentiment-desc");
+    if (sentDescEl) {
+        sentDescEl.innerText = overview.flow_sentiment || '--';
+        sentDescEl.style.color = overview.sentiment_color || '#cbd5e1';
+    }
+
+    const amtEl = document.getElementById("metric-etf-total-amount");
+    if (amtEl) {
+        amtEl.innerText = `${overview.total_amount_yi || 0} 亿元`;
+    }
+
+    const largeEl = document.getElementById("metric-etf-large-flow");
+    if (largeEl) {
+        const lf = overview.large_cap_flow_yi || 0;
+        largeEl.innerText = `${lf > 0 ? '+' : ''}${lf} 亿元`;
+        largeEl.style.color = lf >= 0 ? '#ef4444' : '#10b981';
+    }
+
+    const growthEl = document.getElementById("metric-etf-growth-flow");
+    if (growthEl) {
+        const gf = overview.growth_cap_flow_yi || 0;
+        growthEl.innerText = `${gf > 0 ? '+' : ''}${gf} 亿元`;
+        growthEl.style.color = gf >= 0 ? '#ef4444' : '#10b981';
+    }
+
+    const ratioEl = document.getElementById("metric-etf-ratio");
+    if (ratioEl) {
+        ratioEl.innerHTML = `<span style="color:#ef4444;">${overview.inflow_count || 0} 净买</span> / <span style="color:#10b981;">${overview.outflow_count || 0} 净卖</span>`;
+    }
+}
+
+function renderEtfCategoryCharts(categories) {
+    // 1. 各大指数净流入柱状图
+    const flowChartDom = document.getElementById("etf-category-flow-chart");
+    if (flowChartDom) {
+        if (!etfFlowChartInstance) {
+            etfFlowChartInstance = echarts.init(flowChartDom);
+        }
+        
+        const sortedCats = [...categories].sort((a, b) => b.net_flow_yi - a.net_flow_yi);
+        const catNames = sortedCats.map(x => x.category);
+        const flowValues = sortedCats.map(x => x.net_flow_yi);
+
+        const flowOption = {
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    const item = sortedCats[params[0].dataIndex];
+                    return `<div style="font-size:13px; font-weight:bold; margin-bottom:4px;">${item.category}</div>
+                            <div>主力净流入: <span style="color:${item.net_flow_yi >= 0 ? '#ef4444':'#10b981'}; font-weight:bold;">${item.net_flow_yi > 0 ? '+':''}${item.net_flow_yi} 亿元</span></div>
+                            <div>大类总成交: ${item.amount_yi} 亿元</div>
+                            <div>平均涨跌幅: <span style="color:${item.avg_change_pct >= 0 ? '#ef4444':'#10b981'};">${item.avg_change_pct > 0 ? '+':''}${item.avg_change_pct}%</span></div>`;
+                }
+            },
+            grid: { top: 25, bottom: 25, left: 70, right: 25 },
+            xAxis: {
+                type: 'value',
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { lineStyle: { color: '#1e293b' } },
+                axisLabel: { color: '#94a3b8', formatter: '{value} 亿' }
+            },
+            yAxis: {
+                type: 'category',
+                data: catNames,
+                inverse: true,
+                axisLine: { lineStyle: { color: '#334155' } },
+                axisLabel: { color: '#cbd5e1', fontWeight: 600 }
+            },
+            series: [{
+                name: '主力净流入(亿元)',
+                type: 'bar',
+                barWidth: 16,
+                data: flowValues.map(v => ({
+                    value: v,
+                    itemStyle: {
+                        color: v >= 0 
+                            ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                { offset: 0, color: '#ef444488' },
+                                { offset: 1, color: '#ef4444' }
+                              ])
+                            : new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                { offset: 0, color: '#10b981' },
+                                { offset: 1, color: '#10b98188' }
+                              ]),
+                        borderRadius: v >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4]
+                    }
+                })),
+                label: {
+                    show: true,
+                    position: 'right',
+                    color: '#e2e8f0',
+                    formatter: function(params) {
+                        return (params.value > 0 ? '+' : '') + params.value + ' 亿';
+                    }
+                }
+            }]
+        };
+        etfFlowChartInstance.setOption(flowOption);
+    }
+
+    // 2. 宽基体量成交分布饼图
+    const amountChartDom = document.getElementById("etf-category-amount-chart");
+    if (amountChartDom) {
+        if (!etfAmountChartInstance) {
+            etfAmountChartInstance = echarts.init(amountChartDom);
+        }
+        
+        const pieData = categories.map(x => ({
+            name: x.category,
+            value: x.amount_yi
+        }));
+
+        const pieOption = {
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'item',
+                formatter: '{b}: {c} 亿元 ({d}%)'
+            },
+            legend: {
+                orient: 'vertical',
+                right: 5,
+                top: 'middle',
+                textStyle: { color: '#94a3b8', fontSize: 11 }
+            },
+            series: [{
+                name: '成交额占比',
+                type: 'pie',
+                radius: ['42%', '70%'],
+                center: ['40%', '50%'],
+                avoidLabelOverlap: false,
+                itemStyle: {
+                    borderRadius: 6,
+                    borderColor: '#111827',
+                    borderWidth: 2
+                },
+                label: { show: false },
+                emphasis: {
+                    label: {
+                        show: true,
+                        fontSize: 13,
+                        fontWeight: 'bold',
+                        color: '#fff'
+                    }
+                },
+                data: pieData
+            }]
+        };
+        etfAmountChartInstance.setOption(pieOption);
+    }
+}
+
+function renderEtfCategoryTable(categories) {
+    const tbody = document.getElementById("etf-category-tbody");
+    if (!tbody) return;
+
+    let html = "";
+    categories.forEach(item => {
+        const isFlowBuy = item.net_flow_yi >= 0;
+        const isChgUp = item.avg_change_pct >= 0;
+        
+        let strengthTag = "";
+        if (item.net_flow_yi > 10) {
+            strengthTag = '<span class="tag tag-red">🔥 强力做多</span>';
+        } else if (item.net_flow_yi > 0) {
+            strengthTag = '<span class="tag" style="background:rgba(239,68,68,0.15); color:#fca5a5;">偏强吸筹</span>';
+        } else if (item.net_flow_yi > -10) {
+            strengthTag = '<span class="tag" style="background:rgba(16,185,129,0.15); color:#86efac;">小幅分歧</span>';
+        } else {
+            strengthTag = '<span class="tag" style="background:rgba(16,185,129,0.25); color:#10b981;">💨 减仓流出</span>';
+        }
+
+        html += `
+            <tr>
+                <td style="font-weight:700; color:#f8fafc; font-size:14px;">${item.category}</td>
+                <td><span class="tag" style="background:#1e293b; color:#93c5fd;">${item.count} 只标的</span></td>
+                <td style="font-weight:800; color:${isFlowBuy ? '#ef4444' : '#10b981'}; font-size:14px;">
+                    ${isFlowBuy ? '+' : ''}${item.net_flow_yi} 亿元
+                </td>
+                <td style="font-weight:600; color:#38bdf8;">${item.amount_yi} 亿元</td>
+                <td style="font-weight:700; color:${isChgUp ? '#ef4444' : '#10b981'};">
+                    ${isChgUp ? '+' : ''}${item.avg_change_pct}%
+                </td>
+                <td>${strengthTag}</td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function renderEtfItemsTable(items) {
+    const tbody = document.getElementById("etf-items-tbody");
+    if (!tbody) return;
+
+    // 过滤
+    let filtered = items;
+    if (currentEtfFilter !== "all") {
+        if (currentEtfFilter === "科创/创业") {
+            filtered = items.filter(x => x.category.includes("科创") || x.category.includes("创业"));
+        } else {
+            filtered = items.filter(x => x.category === currentEtfFilter);
+        }
+    }
+
+    // 排序
+    filtered.sort((a, b) => {
+        let valA = a[currentEtfSortField];
+        let valB = b[currentEtfSortField];
+        if (currentEtfSortOrder === "desc") {
+            return valB - valA;
+        } else {
+            return valA - valB;
+        }
+    });
+
+    let html = "";
+    filtered.forEach(it => {
+        const isFlowBuy = it.net_flow_yi >= 0;
+        const isChgUp = it.change_pct >= 0;
+        html += `
+            <tr>
+                <td><span style="font-family:monospace; color:#94a3b8; font-weight:600;">${it.code}</span></td>
+                <td>
+                    <span class="stock-link" onclick="openStockChart('${it.code}', '${it.name}', ${it.price}, ${it.change_pct}, ${it.amount_yi * 10000})">
+                        ${it.name}
+                    </span>
+                </td>
+                <td><span class="tag" style="background:#1e293b; color:#cbd5e1;">${it.category}</span></td>
+                <td style="font-weight:700; color:#f8fafc;">${it.price ? it.price.toFixed(3) : '--'}</td>
+                <td style="font-weight:700; color:${isChgUp ? '#ef4444' : '#10b981'};">
+                    ${isChgUp ? '+' : ''}${it.change_pct}%
+                </td>
+                <td style="font-weight:800; color:${isFlowBuy ? '#ef4444' : '#10b981'};">
+                    ${isFlowBuy ? '+' : ''}${it.net_flow_yi} 亿
+                    <span style="font-size:11px; opacity:0.75; font-weight:normal;">(${isFlowBuy ? '+' : ''}${it.net_flow_wan}万)</span>
+                </td>
+                <td style="font-weight:600; color:#38bdf8;">${it.amount_yi} 亿</td>
+                <td style="color:#ef4444; font-size:12px;">${(it.outer_vol / 10000).toFixed(1)} 万手</td>
+                <td style="color:#10b981; font-size:12px;">${(it.inner_vol / 10000).toFixed(1)} 万手</td>
+                <td>
+                    <button class="primary-btn" style="padding:3px 10px; font-size:11px; border-radius:4px;" 
+                        onclick="openStockChart('${it.code}', '${it.name}', ${it.price}, ${it.change_pct}, ${it.amount_yi * 10000})">
+                        📈 分时/K线
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function filterEtfTable(filterCat) {
+    currentEtfFilter = filterCat;
+    const filterBtnIds = {
+        'all': 'etf-filter-all',
+        '沪深300': 'etf-filter-300',
+        '中证A500': 'etf-filter-a500',
+        '上证50': 'etf-filter-50',
+        '中证1000': 'etf-filter-1000',
+        '科创/创业': 'etf-filter-tech'
+    };
+    Object.values(filterBtnIds).forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.remove("active");
+    });
+    const curBtn = document.getElementById(filterBtnIds[filterCat]);
+    if (curBtn) curBtn.classList.add("active");
+
+    if (currentEtfData && currentEtfData.items) {
+        renderEtfItemsTable(currentEtfData.items);
+    }
+}
+
+function sortEtfTable(field) {
+    if (currentEtfSortField === field) {
+        currentEtfSortOrder = currentEtfSortOrder === "desc" ? "asc" : "desc";
+    } else {
+        currentEtfSortField = field;
+        currentEtfSortOrder = "desc";
+    }
+    if (currentEtfData && currentEtfData.items) {
+        renderEtfItemsTable(currentEtfData.items);
+    }
+}
+
+// ------------------------------------------
+// 宽基 ETF 历史 K 线与资金流入流出联动分析
+// ------------------------------------------
+
+function calculateMA(dayCount, data) {
+    var result = [];
+    for (var i = 0, len = data.length; i < len; i++) {
+        if (i < dayCount) {
+            result.push('-');
+            continue;
+        }
+        var sum = 0;
+        for (var j = 0; j < dayCount; j++) {
+            sum += +data[i - j][1]; // close price
+        }
+        result.push((sum / dayCount).toFixed(3));
+    }
+    return result;
+}
+
+async function loadEtfKlineWithFlow(code, period) {
+    code = code || currentEtfKlineCode;
+    period = period || currentEtfKlinePeriod;
+    currentEtfKlineCode = code;
+    currentEtfKlinePeriod = period;
+
+    try {
+        const res = await fetch(`/api/market/etf_kline?code=${code}&period=${period}&limit=120`);
+        const json = await res.json();
+        if (json.status !== "success") return;
+
+        const titleEl = document.getElementById("etf-kline-title");
+        if (titleEl) {
+            const pName = period === 'day' ? '日K' : (period === 'week' ? '周K' : '月K');
+            if (json.code === "ALL_BROAD") {
+                titleEl.innerHTML = `🌟 全市场核心宽基合力 - ${pName}线与全宽基(50/300/500/1000/2000/科创/创业板)资金流向分析 <span style="font-size:12px; color:#38bdf8; font-weight:normal;">[跨度: ${json.earliest_date || ''} ~ ${json.latest_date || ''} 共${json.total_days || 0}根K线]</span>`;
+            } else {
+                titleEl.innerText = `${json.name} (${json.code}) - ${pName}线与资金净流入流出联动分析 [跨度: ${json.earliest_date || ''} ~ ${json.latest_date || ''} 共${json.total_days || 0}根K线]`;
+            }
+        }
+
+        const dateBadge = document.getElementById("etf-chart-date-badge");
+        if (dateBadge) {
+            dateBadge.innerText = `数据区间: ${json.earliest_date || '2015-01-01'} 至 ${json.latest_date || '最新'} (共 ${json.total_days || 0} 周期)`;
+        }
+
+        // 更新细分卡片数据
+        const cardBox = document.getElementById("etf-breakdown-summary-cards");
+        if (json.code === "ALL_BROAD" && json.category_totals) {
+            if (cardBox) cardBox.style.display = "grid";
+            const ct = json.category_totals;
+            const setVal = (id, val, color) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    const sign = val > 0 ? '+' : '';
+                    el.innerText = `${sign}${val} 亿`;
+                    el.style.color = val >= 0 ? color : '#10b981';
+                }
+            };
+            setVal("stat-etf-50", ct['50'] || 0, '#f97316');
+            setVal("stat-etf-300", ct['300'] || 0, '#ef4444');
+            setVal("stat-etf-500", ct['500'] || 0, '#eab308');
+            setVal("stat-etf-1000", ct['1000'] || 0, '#10b981');
+            setVal("stat-etf-2000", ct['2000'] || 0, '#06b6d4');
+            setVal("stat-etf-kc", ct['科创'] || 0, '#8b5cf6');
+            setVal("stat-etf-cyb", ct['创业板'] || 0, '#ec4899');
+            setVal("stat-etf-a500", ct['A500'] || 0, '#3b82f6');
+            
+            const grandEl = document.getElementById("stat-etf-grand");
+            if (grandEl) {
+                const gVal = json.grand_total_flow_yi || 0;
+                grandEl.innerText = `${gVal > 0 ? '+' : ''}${gVal} 亿`;
+                grandEl.style.color = gVal >= 0 ? '#fbbf24' : '#10b981';
+            }
+        } else {
+            // 单只 ETF 模式下隐藏细分总合卡片
+            if (cardBox) cardBox.style.display = "none";
+        }
+
+        renderEtfKlineFlowChart(json);
+    } catch (e) {
+        console.error("加载 ETF 历史 K 线及资金流向失败:", e);
+    }
+}
+
+function renderEtfKlineFlowChart(data) {
+    const chartDom = document.getElementById("etf-kline-flow-chart");
+    if (!chartDom) return;
+
+    if (!etfKlineFlowChartInstance) {
+        etfKlineFlowChartInstance = echarts.init(chartDom);
+    }
+
+    const dates = data.dates || [];
+    const values = data.values || []; // [open, close, low, high]
+    const flows = data.flows || []; // 每日总净流入柱子 (亿元)
+    const cumFlows = data.cum_flows || []; // 累计主力净流入 (亿元)
+    const isAggregated = data.code === "ALL_BROAD";
+    const bd = data.breakdown || null;
+
+    const ma5 = calculateMA(5, values);
+    const ma10 = calculateMA(10, values);
+    const ma20 = calculateMA(20, values);
+
+    // 提示框格式化
+    const tooltipFormatter = function(params) {
+        if (!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const d = dates[idx];
+        const v = values[idx];
+        const netF = flows[idx] !== undefined ? flows[idx] : 0;
+        const cumF = cumFlows[idx] !== undefined ? cumFlows[idx] : 0;
+        
+        let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:4px; font-size:13px;">${d}</div>`;
+        if (v) {
+            const isUp = v[1] >= v[0];
+            const chgColor = isUp ? '#ef4444' : '#10b981';
+            html += `<div>基准大盘 (开: <b>${v[0]}</b> | 收: <b style="color:${chgColor}">${v[1]}</b> | 高: <b>${v[3]}</b> | 低: <b>${v[2]}</b>)</div>`;
+        }
+        const flowColor = netF >= 0 ? '#ef4444' : '#10b981';
+        html += `<div style="margin-top:6px; padding-top:4px; border-top:1px solid #334155; font-size:13px;">
+                    <b>${isAggregated ? '宽基总合主力净流入' : '主力单日净流入'}:</b> <b style="color:${flowColor}">${netF > 0 ? '+' : ''}${netF} 亿元</b>
+                 </div>`;
+        html += `<div><b>累计主力净沉淀:</b> <b style="color:${cumF >= 0 ? '#f59e0b':'#38bdf8'}">${cumF > 0 ? '+' : ''}${cumF} 亿元</b></div>`;
+
+        if (isAggregated && bd) {
+            html += `<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #334155; font-size:12px; display:grid; grid-template-columns:1fr 1fr; gap:3px 12px;">
+                        <div>上证50: <b style="color:${bd['50'][idx]>=0?'#ef4444':'#10b981'}">${bd['50'][idx]>0?'+':''}${bd['50'][idx]}亿</b></div>
+                        <div>沪深300: <b style="color:${bd['300'][idx]>=0?'#ef4444':'#10b981'}">${bd['300'][idx]>0?'+':''}${bd['300'][idx]}亿</b></div>
+                        <div>中证500: <b style="color:${bd['500'][idx]>=0?'#ef4444':'#10b981'}">${bd['500'][idx]>0?'+':''}${bd['500'][idx]}亿</b></div>
+                        <div>中证1000: <b style="color:${bd['1000'][idx]>=0?'#ef4444':'#10b981'}">${bd['1000'][idx]>0?'+':''}${bd['1000'][idx]}亿</b></div>
+                        <div>中证2000: <b style="color:${bd['2000'][idx]>=0?'#ef4444':'#10b981'}">${bd['2000'][idx]>0?'+':''}${bd['2000'][idx]}亿</b></div>
+                        <div>科创(50+100): <b style="color:${bd['科创'][idx]>=0?'#ef4444':'#10b981'}">${bd['科创'][idx]>0?'+':''}${bd['科创'][idx]}亿</b></div>
+                        <div>创业板指: <b style="color:${bd['创业板'][idx]>=0?'#ef4444':'#10b981'}">${bd['创业板'][idx]>0?'+':''}${bd['创业板'][idx]}亿</b></div>
+                        <div>中证A500: <b style="color:${bd['A500'][idx]>=0?'#ef4444':'#10b981'}">${bd['A500'][idx]>0?'+':''}${bd['A500'][idx]}亿</b></div>
+                     </div>`;
+        }
+        return html;
+    };
+
+    let legendData = ['基准K线', 'MA5', 'MA10', 'MA20', '宽基总净流入(亿元)', '累计总合力(亿元)'];
+    if (isAggregated) {
+        legendData = ['基准K线', 'MA5', 'MA10', 'MA20', '宽基总净流入(亿元)', '累计总合力(亿元)', '上证50', '沪深300', '中证500', '中证1000', '中证2000', '科创', '创业板', '中证A500'];
+    }
+
+    const seriesList = [
+        {
+            name: '基准K线',
+            type: 'candlestick',
+            data: values,
+            itemStyle: {
+                color: '#ef4444',
+                color0: '#10b981',
+                borderColor: '#ef4444',
+                borderColor0: '#10b981'
+            }
+        },
+        {
+            name: 'MA5',
+            type: 'line',
+            data: ma5,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: '#f59e0b' }
+        },
+        {
+            name: 'MA10',
+            type: 'line',
+            data: ma10,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: '#38bdf8' }
+        },
+        {
+            name: 'MA20',
+            type: 'line',
+            data: ma20,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: '#ec4899' }
+        },
+        // 下层柱状图: 宽基总合主力净流入/净流出
+        {
+            name: '宽基总净流入(亿元)',
+            type: 'bar',
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            barWidth: isAggregated ? 8 : 6,
+            data: flows.map(f => ({
+                value: f,
+                itemStyle: {
+                    color: f >= 0 ? '#ef4444' : '#10b981',
+                    borderRadius: f >= 0 ? [2, 2, 0, 0] : [0, 0, 2, 2]
+                }
+            }))
+        },
+        // 下层累计折线: 累计主力资金流入
+        {
+            name: '累计总合力(亿元)',
+            type: 'line',
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            data: cumFlows,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 2.2, color: '#a855f7' }
+        }
+    ];
+
+    if (isAggregated && bd) {
+        // 细分各指数流向对比折线
+        const subDefs = [
+            { name: '上证50', key: '50', color: '#f97316' },
+            { name: '沪深300', key: '300', color: '#ef4444' },
+            { name: '中证500', key: '500', color: '#eab308' },
+            { name: '中证1000', key: '1000', color: '#10b981' },
+            { name: '中证2000', key: '2000', color: '#06b6d4' },
+            { name: '科创', key: '科创', color: '#8b5cf6' },
+            { name: '创业板', key: '创业板', color: '#ec4899' },
+            { name: '中证A500', key: 'A500', color: '#3b82f6' }
+        ];
+
+        subDefs.forEach(s => {
+            seriesList.push({
+                name: s.name,
+                type: 'line',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: bd[s.key] || [],
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { width: 1.2, color: s.color, type: 'dashed' }
+            });
+        });
+    }
+
+    const totalLen = dates.length || 1;
+    // 默认展示近60~120周期，支持快速切换到10年全部
+    const initialStart = totalLen > 150 ? Math.max(0, 100 - Math.round(150 / totalLen * 100)) : 0;
+
+    const option = {
+        backgroundColor: 'transparent',
+        animation: false,
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'cross',
+                lineStyle: { color: '#38bdf8', width: 1, type: 'dashed' }
+            },
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            borderColor: '#334155',
+            textStyle: { color: '#f8fafc', fontSize: 12 },
+            formatter: tooltipFormatter
+        },
+        axisPointer: {
+            link: [{ xAxisIndex: 'all' }],
+            label: { backgroundColor: '#334155' }
+        },
+        legend: {
+            data: legendData,
+            selected: isAggregated ? {
+                '基准K线': true, 'MA5': true, 'MA10': false, 'MA20': false,
+                '宽基总净流入(亿元)': true, '累计总合力(亿元)': true,
+                '上证50': false, '沪深300': false, '中证500': false,
+                '中证1000': false, '中证2000': false, '科创': false, '创业板': false, '中证A500': false
+            } : {},
+            textStyle: { color: '#cbd5e1', fontSize: 11 },
+            top: 0,
+            right: 15,
+            type: 'scroll'
+        },
+        grid: [
+            // 上层 K 线走势区
+            { left: '60px', right: '50px', top: '35px', height: '54%' },
+            // 下层 资金净流入与累计净买区
+            { left: '60px', right: '50px', top: '66%', height: '25%' }
+        ],
+        xAxis: [
+            {
+                type: 'category',
+                data: dates,
+                boundaryGap: true,
+                axisLine: { lineStyle: { color: '#334155' } },
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                splitLine: { show: false }
+            },
+            {
+                type: 'category',
+                gridIndex: 1,
+                data: dates,
+                boundaryGap: true,
+                axisLine: { lineStyle: { color: '#334155' } },
+                axisLabel: { show: false },
+                splitLine: { show: false }
+            }
+        ],
+        yAxis: [
+            {
+                scale: true,
+                splitArea: { show: false },
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { lineStyle: { color: '#1e293b' } },
+                axisLabel: { color: '#94a3b8' }
+            },
+            {
+                scale: true,
+                gridIndex: 1,
+                splitNumber: 3,
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { lineStyle: { color: '#1e293b' } },
+                axisLabel: { color: '#94a3b8', formatter: '{value} 亿' }
+            }
+        ],
+        dataZoom: [
+            {
+                type: 'inside',
+                xAxisIndex: [0, 1],
+                start: initialStart,
+                end: 100
+            },
+            {
+                show: true,
+                xAxisIndex: [0, 1],
+                type: 'slider',
+                bottom: '2px',
+                start: initialStart,
+                end: 100,
+                borderColor: '#334155',
+                fillerColor: 'rgba(59, 130, 246, 0.15)',
+                textStyle: { color: '#94a3b8' }
+            }
+        ],
+        series: seriesList
+    };
+
+    etfKlineFlowChartInstance.setOption(option, true);
+}
+
+function zoomEtfKlineFast(type) {
+    if (!etfKlineFlowChartInstance) return;
+    const opt = etfKlineFlowChartInstance.getOption();
+    if (!opt || !opt.xAxis || !opt.xAxis[0] || !opt.xAxis[0].data) return;
+    const total = opt.xAxis[0].data.length;
+    let startVal = 0;
+
+    if (type === 'half_year') {
+        const count = currentEtfKlinePeriod === 'day' ? 120 : (currentEtfKlinePeriod === 'week' ? 26 : 6);
+        startVal = Math.max(0, 100 - Math.round(count / total * 100));
+    } else if (type === '1_year') {
+        const count = currentEtfKlinePeriod === 'day' ? 245 : (currentEtfKlinePeriod === 'week' ? 52 : 12);
+        startVal = Math.max(0, 100 - Math.round(count / total * 100));
+    } else if (type === '3_year') {
+        const count = currentEtfKlinePeriod === 'day' ? 735 : (currentEtfKlinePeriod === 'week' ? 156 : 36);
+        startVal = Math.max(0, 100 - Math.round(count / total * 100));
+    } else if (type === 'all') {
+        startVal = 0;
+    }
+
+    etfKlineFlowChartInstance.dispatchAction({
+        type: 'dataZoom',
+        start: startVal,
+        end: 100
+    });
+}
+
+function changeEtfKlineTarget(code) {
+    currentEtfKlineCode = code;
+    loadEtfKlineWithFlow(currentEtfKlineCode, currentEtfKlinePeriod);
+}
+
+function changeEtfKlinePeriod(period) {
+    currentEtfKlinePeriod = period;
+    ['day', 'week', 'month'].forEach(p => {
+        const btn = document.getElementById(`btn-etf-period-${p}`);
+        if (btn) btn.classList.remove('active');
+    });
+    const curBtn = document.getElementById(`btn-etf-period-${period}`);
+    if (curBtn) curBtn.classList.add('active');
+
+    loadEtfKlineWithFlow(currentEtfKlineCode, currentEtfKlinePeriod);
+}
+
+// ==========================================
+// 🏛️ 证金汇金持仓数量增减明细与时间时序追踪
+// ==========================================
+let currentHuijinChangeType = "ALL";
+let currentHuijinEntity = "ALL";
+let currentHuijinPeriod = "";
+let currentHuijinKeyword = "";
+let currentHuijinPage = 1;
+let currentHuijinPageSize = 30;
+let currentHuijinData = null;
+let currentHuijinSortField = "end_date";
+let currentHuijinSortOrder = "desc";
+
+async function loadHuijinHoldings() {
+    const tbody = document.getElementById("huijin-table-tbody");
+    if (tbody && !currentHuijinData) {
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding:25px; color:#38bdf8;">🔄 正在极速拉取证金汇金历次增持/减持明细...</td></tr>`;
+    }
+
+    try {
+        const params = new URLSearchParams({
+            change_type: currentHuijinChangeType,
+            entity: currentHuijinEntity,
+            report_date: currentHuijinPeriod,
+            keyword: currentHuijinKeyword,
+            page: currentHuijinPage,
+            page_size: currentHuijinPageSize
+        });
+
+        const res = await fetch(`/api/market/huijin_holdings?${params.toString()}`);
+        const json = await res.json();
+        if (json.status !== "success") return;
+        currentHuijinData = json;
+
+        renderHuijinPeriodsDropdown(json.available_periods || []);
+        renderHuijinTimelineChips(json.timeline_summary || []);
+        renderHuijinTable(json.records || []);
+        updateHuijinPagination(json);
+    } catch (e) {
+        console.error("加载证金汇金持仓增减数据失败:", e);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding:20px; color:#ef4444;">加载证金汇金数据出错: ${e}</td></tr>`;
+        }
+    }
+}
+
+function renderHuijinPeriodsDropdown(periods) {
+    const sel = document.getElementById("huijin-period-select");
+    if (!sel || sel.children.length > 1) return; // 已初始化
+
+    periods.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.innerText = `${p} 报告期`;
+        sel.appendChild(opt);
+    });
+}
+
+function renderHuijinTimelineChips(timeline) {
+    const container = document.getElementById("huijin-timeline-chips");
+    const countBadge = document.getElementById("huijin-timeline-count-badge");
+    if (countBadge) {
+        countBadge.innerText = `共覆盖 ${timeline.length} 个历史报告期`;
+    }
+    if (!container) return;
+
+    if (!timeline || !timeline.length) {
+        container.innerHTML = `<span style="color:#64748b; font-size:12px;">暂无时序汇总</span>`;
+        return;
+    }
+
+    let html = "";
+    timeline.forEach(t => {
+        const isActive = currentHuijinPeriod === t.date;
+        const activeStyle = isActive 
+            ? "background: #f59e0b; color: #0f172a; font-weight: 700; border: 1px solid #fbbf24;"
+            : "background: rgba(30, 41, 59, 0.8); color: #cbd5e1; border: 1px solid #475569;";
+            
+        html += `
+            <div onclick="selectHuijinPeriodChip('${t.date}')" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:16px; font-size:11px; white-space:nowrap; transition:all 0.2s; ${activeStyle}">
+                <span>📅 <b>${t.date}</b></span>
+                <span style="font-size:10px; padding:1px 5px; border-radius:10px; background:${isActive ? 'rgba(0,0,0,0.2)' : 'rgba(245,158,11,0.2)'}; color:${isActive ? '#0f172a' : '#fbbf24'}; font-weight:700;">
+                    ${t.total_changes}次变动
+                </span>
+                ${t.inc_count > 0 ? `<span style="color:${isActive ? '#78350f' : '#ef4444'}; font-weight:bold;">+${t.inc_count}增</span>` : ''}
+                ${t.new_count > 0 ? `<span style="color:${isActive ? '#78350f' : '#8b5cf6'}; font-weight:bold;">★${t.new_count}新</span>` : ''}
+                ${t.dec_count > 0 ? `<span style="color:${isActive ? '#78350f' : '#10b981'}; font-weight:bold;">-${t.dec_count}减</span>` : ''}
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+function selectHuijinPeriodChip(period) {
+    if (currentHuijinPeriod === period) {
+        currentHuijinPeriod = ""; // 再次点击取消选中
+    } else {
+        currentHuijinPeriod = period;
+    }
+    const sel = document.getElementById("huijin-period-select");
+    if (sel) sel.value = currentHuijinPeriod;
+    currentHuijinPage = 1;
+    loadHuijinHoldings();
+}
+
+function renderHuijinTable(records) {
+    const tbody = document.getElementById("huijin-table-tbody");
+    if (!tbody) return;
+
+    if (!records || !records.length) {
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding:30px; color:#94a3b8;">未查询到符合条件的汇金增减记录，请尝试调整筛选或搜索条件</td></tr>`;
+        return;
+    }
+
+    // 前端排序
+    const sorted = [...records].sort((a, b) => {
+        let valA = a[currentHuijinSortField];
+        let valB = b[currentHuijinSortField];
+        if (currentHuijinSortField === 'change_shares') {
+            valA = parseFloat(a.change_shares_raw) || 0;
+            valB = parseFloat(b.change_shares_raw) || 0;
+        } else if (currentHuijinSortField === 'market_cap') {
+            valA = parseFloat(a.market_cap_yi) || 0;
+            valB = parseFloat(b.market_cap_yi) || 0;
+        } else if (currentHuijinSortField === 'hold_ratio') {
+            valA = parseFloat(a.hold_ratio) || 0;
+            valB = parseFloat(b.hold_ratio) || 0;
+        }
+
+        if (currentHuijinSortOrder === "desc") {
+            return valB > valA ? 1 : (valB < valA ? -1 : 0);
+        } else {
+            return valA > valB ? 1 : (valA < valB ? -1 : 0);
+        }
+    });
+
+    let html = "";
+    sorted.forEach(r => {
+        // 增减标签样式
+        let changeBadge = "";
+        let sharesColor = "#f8fafc";
+        if (r.change_type === "增加") {
+            changeBadge = '<span class="tag tag-red" style="font-weight:700;">➕ 增持</span>';
+            sharesColor = "#ef4444";
+        } else if (r.change_type === "减少") {
+            changeBadge = '<span class="tag tag-green" style="font-weight:700;">➖ 减持</span>';
+            sharesColor = "#10b981";
+        } else if (r.change_type === "新进") {
+            changeBadge = '<span class="tag tag-purple" style="font-weight:700;">🌟 新进前十</span>';
+            sharesColor = "#a855f7";
+        } else {
+            changeBadge = `<span class="tag tag-blue">${r.change_type}</span>`;
+        }
+
+        let entityBadge = "";
+        if (r.holder_tag === "证金公司") {
+            entityBadge = '<span class="tag" style="background:rgba(6,182,212,0.2); color:#22d3ee; border:1px solid rgba(6,182,212,0.4);">证金公司</span>';
+        } else if (r.holder_tag === "汇金投资") {
+            entityBadge = '<span class="tag" style="background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid rgba(245,158,11,0.4);">汇金投资</span>';
+        } else {
+            entityBadge = '<span class="tag" style="background:rgba(59,130,246,0.2); color:#60a5fa; border:1px solid rgba(59,130,246,0.4);">汇金资管</span>';
+        }
+
+        html += `
+            <tr style="border-bottom:1px solid #1e293b; transition: background 0.15s;" onmouseover="this.style.background='rgba(30,41,59,0.5)'" onmouseout="this.style.background='transparent'">
+                <td style="font-family:monospace; color:#38bdf8; font-weight:700; white-space:nowrap;">${r.end_date}</td>
+                <td style="font-family:monospace; color:#94a3b8;">${r.code}</td>
+                <td>
+                    <span style="font-weight:bold; color:#f8fafc; cursor:pointer;" onclick="openStockChart('${r.code}', '${r.name}')" title="点击查看股票行情">
+                        ${r.name}
+                    </span>
+                </td>
+                <td>${entityBadge}</td>
+                <td>${changeBadge}</td>
+                <td style="font-weight:800; color:${sharesColor}; font-size:13px;">${r.change_shares_display}</td>
+                <td style="font-weight:600; color:${r.change_ratio.startsWith('+') ? '#ef4444' : (r.change_ratio.startsWith('-') ? '#10b981' : '#94a3b8')};">${r.change_ratio}</td>
+                <td style="font-weight:600; color:#e2e8f0;">${r.hold_shares_display}</td>
+                <td style="font-weight:700; color:#38bdf8;">${r.hold_ratio}</td>
+                <td style="font-weight:700; color:#f59e0b;">${r.market_cap_yi > 0 ? r.market_cap_yi + ' 亿' : '--'}</td>
+                <td>
+                    <button class="chart-tab-btn" style="padding:2px 8px; font-size:11px;" onclick="openStockChart('${r.code}', '${r.name}')">
+                        📊 K线
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function updateHuijinPagination(json) {
+    const totalEl = document.getElementById("huijin-total-count");
+    if (totalEl) totalEl.innerText = json.total || 0;
+
+    const showingEl = document.getElementById("huijin-showing-range");
+    if (showingEl) {
+        const start = (json.page - 1) * json.page_size + 1;
+        const end = Math.min(json.page * json.page_size, json.total);
+        showingEl.innerText = json.total > 0 ? `${start} ~ ${end}` : '0';
+    }
+
+    const pageInd = document.getElementById("huijin-page-indicator");
+    const totalPages = Math.max(1, Math.ceil((json.total || 0) / json.page_size));
+    if (pageInd) {
+        pageInd.innerText = `第 ${json.page} / ${totalPages} 页`;
+    }
+
+    const prevBtn = document.getElementById("btn-hj-prev-page");
+    if (prevBtn) prevBtn.disabled = json.page <= 1;
+
+    const nextBtn = document.getElementById("btn-hj-next-page");
+    if (nextBtn) nextBtn.disabled = json.page >= totalPages;
+}
+
+function changeHuijinPage(delta) {
+    currentHuijinPage += delta;
+    if (currentHuijinPage < 1) currentHuijinPage = 1;
+    loadHuijinHoldings();
+}
+
+function setHuijinChangeType(type) {
+    currentHuijinChangeType = type;
+    ['all', 'inc', 'add', 'new', 'dec'].forEach(k => {
+        const btn = document.getElementById(`btn-hj-type-${k}`);
+        if (btn) btn.classList.remove('active');
+    });
+    const map = { 'ALL': 'all', 'INC': 'inc', 'ADD_ONLY': 'add', 'NEW': 'new', 'DEC': 'dec' };
+    const curBtn = document.getElementById(`btn-hj-type-${map[type] || 'all'}`);
+    if (curBtn) curBtn.classList.add('active');
+
+    currentHuijinPage = 1;
+    loadHuijinHoldings();
+}
+
+function filterHuijinData() {
+    const entSel = document.getElementById("huijin-entity-select");
+    if (entSel) currentHuijinEntity = entSel.value;
+
+    const perSel = document.getElementById("huijin-period-select");
+    if (perSel) currentHuijinPeriod = perSel.value;
+
+    const searchInput = document.getElementById("huijin-search-input");
+    if (searchInput) currentHuijinKeyword = searchInput.value.trim();
+
+    currentHuijinPage = 1;
+    loadHuijinHoldings();
+}
+
+function resetHuijinFilter() {
+    currentHuijinChangeType = "ALL";
+    currentHuijinEntity = "ALL";
+    currentHuijinPeriod = "";
+    currentHuijinKeyword = "";
+    currentHuijinPage = 1;
+
+    const entSel = document.getElementById("huijin-entity-select");
+    if (entSel) entSel.value = "ALL";
+
+    const perSel = document.getElementById("huijin-period-select");
+    if (perSel) perSel.value = "";
+
+    const searchInput = document.getElementById("huijin-search-input");
+    if (searchInput) searchInput.value = "";
+
+    setHuijinChangeType("ALL");
+}
+
+function sortHuijinTable(field) {
+    if (currentHuijinSortField === field) {
+        currentHuijinSortOrder = currentHuijinSortOrder === "desc" ? "asc" : "desc";
+    } else {
+        currentHuijinSortField = field;
+        currentHuijinSortOrder = "desc";
+    }
+    if (currentHuijinData && currentHuijinData.records) {
+        renderHuijinTable(currentHuijinData.records);
+    }
+}
+
+// ==========================================
+// 👑 证金汇金持仓总量与市值演变全景 (2015年至今)
+// ==========================================
+let huijinTotalChartInstance = null;
+let currentHuijinTotalData = null;
+
+async function loadHuijinTotalHistory(forceRefresh = false) {
+    const tbody = document.getElementById("huijin-total-table-tbody");
+    if (tbody && !currentHuijinTotalData) {
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; padding:25px; color:#38bdf8;">🔄 正在拉取 2015 年至今各季度证金汇金持仓总量数据...</td></tr>`;
+    }
+
+    try {
+        const url = `/api/market/huijin_total${forceRefresh ? '?refresh=true' : ''}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json.status !== "success") return;
+        currentHuijinTotalData = json;
+
+        renderHuijinTotalCards(json);
+        renderHuijinTotalChart(json);
+        renderHuijinTotalTable(json.table_records || []);
+        if (json.etf_track) {
+            renderHuijinEtfTrack(json.etf_track);
+        }
+    } catch (e) {
+        console.error("加载证金汇金持仓总量演变失败:", e);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; padding:20px; color:#ef4444;">加载证金汇金总量数据失败: ${e}</td></tr>`;
+        }
+    }
+}
+
+let huijinEtfChartInstance = null;
+
+function switchHuijinTotalView(viewType) {
+    const stockContainer = document.getElementById("huijin-view-stock-container");
+    const etfContainer = document.getElementById("huijin-view-etf-container");
+    const btnStock = document.getElementById("btn-hj-view-stock");
+    const btnEtf = document.getElementById("btn-hj-view-etf");
+
+    if (viewType === 'stock') {
+        if (stockContainer) stockContainer.style.display = 'block';
+        if (etfContainer) etfContainer.style.display = 'none';
+        if (btnStock) btnStock.classList.add('active');
+        if (btnEtf) btnEtf.classList.remove('active');
+        if (huijinTotalChartInstance) {
+            setTimeout(() => huijinTotalChartInstance.resize(), 50);
+        }
+    } else {
+        if (stockContainer) stockContainer.style.display = 'none';
+        if (etfContainer) etfContainer.style.display = 'block';
+        if (btnStock) btnStock.classList.remove('active');
+        if (btnEtf) btnEtf.classList.add('active');
+        if (currentHuijinTotalData && currentHuijinTotalData.etf_track) {
+            renderHuijinEtfTrack(currentHuijinTotalData.etf_track);
+        }
+        if (huijinEtfChartInstance) {
+            setTimeout(() => huijinEtfChartInstance.resize(), 50);
+        }
+    }
+}
+
+function renderHuijinEtfTrack(track) {
+    if (!track || !track.length) return;
+
+    // 1. 渲染表格
+    const tbody = document.getElementById("huijin-etf-table-tbody");
+    if (tbody) {
+        let rows = "";
+        // 倒序展示给用户看最新
+        const reversedTrack = [...track].reverse();
+        reversedTrack.forEach(item => {
+            const cap = item.etf_market_cap_yi || 0;
+            const chg = item.cap_change_yi || 0;
+            const isDown = chg < 0;
+            const isSpecialCut = chg <= -5000;
+
+            rows += `
+                <tr style="border-bottom:1px solid #1e293b; transition: background 0.15s; ${isSpecialCut ? 'background: rgba(239, 68, 68, 0.12);' : ''}" onmouseover="this.style.background='rgba(30,41,59,0.5)'" onmouseout="this.style.background='${isSpecialCut ? 'rgba(239, 68, 68, 0.12)' : 'transparent'}'">
+                    <td style="font-family:monospace; color:#38bdf8; font-weight:700;">${item.date} (${item.period_name})</td>
+                    <td>
+                        <span class="tag" style="background:${isSpecialCut ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.2)'}; color:${isSpecialCut ? '#f87171' : '#60a5fa'}; font-weight:bold;">
+                            ${item.stage}
+                        </span>
+                    </td>
+                    <td style="font-weight:800; color:#fbbf24; font-size:14px;">${cap.toLocaleString()} 亿元 <span style="font-size:12px; color:#fde047;">(${(cap/10000).toFixed(2)}万亿)</span></td>
+                    <td style="font-weight:700; color:${isDown ? '#10b981' : '#ef4444'}; font-size:${isSpecialCut ? '15px' : '13px'};">
+                        ${chg > 0 ? '+' : ''}${chg.toLocaleString()} 亿元
+                    </td>
+                    <td style="color:#e2e8f0; font-size:12px;">${item.action}</td>
+                    <td style="color:#94a3b8; font-size:12px;">${item.main_targets}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = rows;
+    }
+
+    // 2. 渲染图表
+    const chartDom = document.getElementById("huijin-etf-trend-chart");
+    if (!chartDom) return;
+
+    if (!huijinEtfChartInstance) {
+        huijinEtfChartInstance = echarts.init(chartDom);
+    }
+
+    const periods = track.map(d => `${d.period_name}\n${d.date.substring(0, 7)}`);
+    const caps = track.map(d => d.etf_market_cap_yi);
+    const changes = track.map(d => d.cap_change_yi);
+
+    const option = {
+        backgroundColor: 'transparent',
+        animation: false,
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'cross', lineStyle: { color: '#ef4444', type: 'dashed' } },
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            borderColor: '#334155',
+            textStyle: { color: '#f8fafc', fontSize: 12 },
+            formatter: function(params) {
+                if (!params || !params.length) return '';
+                const idx = params[0].dataIndex;
+                const item = track[idx];
+                const cap = item.etf_market_cap_yi;
+                const chg = item.cap_change_yi;
+
+                return `
+                    <div style="font-weight:bold; color:#fbbf24; font-size:13px; margin-bottom:4px;">${item.period_name} (${item.date}) · ${item.stage}</div>
+                    <div style="font-size:13px;"><b>ETF持仓总市值:</b> <span style="color:#fbbf24; font-weight:800;">${cap.toLocaleString()} 亿元</span> (${(cap/10000).toFixed(2)}万亿元)</div>
+                    <div style="font-size:13px;"><b>阶段调仓变动额:</b> <span style="color:${chg < 0 ? '#10b981' : '#ef4444'}; font-weight:800;">${chg > 0 ? '+' : ''}${chg.toLocaleString()} 亿元</span></div>
+                    <div style="margin-top:6px; padding-top:4px; border-top:1px dashed #334155; font-size:12px; color:#cbd5e1;">
+                        <div><b>背景动向:</b> ${item.action}</div>
+                        <div><b>重点标的:</b> ${item.main_targets}</div>
+                    </div>
+                `;
+            }
+        },
+        legend: {
+            data: ['汇金ETF持仓总市值 (亿元)', '阶段加仓/减持金额 (亿元)'],
+            textStyle: { color: '#cbd5e1', fontSize: 11 },
+            top: 0,
+            right: 15
+        },
+        grid: {
+            left: '60px',
+            right: '65px',
+            top: '35px',
+            bottom: '40px'
+        },
+        xAxis: {
+            type: 'category',
+            data: periods,
+            axisLine: { lineStyle: { color: '#334155' } },
+            axisLabel: { color: '#94a3b8', fontSize: 11, interval: 0 }
+        },
+        yAxis: [
+            {
+                type: 'value',
+                name: 'ETF持仓总市值 (亿元)',
+                position: 'left',
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { lineStyle: { color: '#1e293b' } },
+                axisLabel: { color: '#fbbf24', formatter: '{value} 亿' }
+            },
+            {
+                type: 'value',
+                name: '变动净额 (亿元)',
+                position: 'right',
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { show: false },
+                axisLabel: { color: '#38bdf8', formatter: '{value} 亿' }
+            }
+        ],
+        series: [
+            {
+                name: '汇金ETF持仓总市值 (亿元)',
+                type: 'line',
+                data: caps,
+                smooth: true,
+                showSymbol: true,
+                symbolSize: 8,
+                lineStyle: { width: 3, color: '#fbbf24' },
+                itemStyle: { color: '#fbbf24' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(251, 191, 36, 0.4)' },
+                        { offset: 1, color: 'rgba(251, 191, 36, 0.0)' }
+                    ])
+                },
+                markPoint: {
+                    data: [
+                        { type: 'max', name: '最高峰值', itemStyle: { color: '#fbbf24' }, label: { formatter: '1.53万亿\n峰值' } }
+                    ]
+                }
+            },
+            {
+                name: '阶段加仓/减持金额 (亿元)',
+                type: 'bar',
+                yAxisIndex: 1,
+                data: changes.map(val => ({
+                    value: val,
+                    itemStyle: {
+                        color: val < 0 ? '#10b981' : '#ef4444'
+                    }
+                })),
+                barWidth: 22,
+                label: {
+                    show: true,
+                    position: 'top',
+                    color: '#e2e8f0',
+                    fontSize: 10,
+                    formatter: function(params) {
+                        const v = params.value;
+                        if (v <= -5000) return '🔥 减持1.02万亿';
+                        return v > 0 ? `+${v}` : `${v}`;
+                    }
+                }
+            }
+        ]
+    };
+
+    huijinEtfChartInstance.setOption(option, true);
+}
+
+function renderHuijinTotalCards(data) {
+    const latestItem = (data.table_records && data.table_records.length > 0) ? data.table_records[0] : {};
+
+    const capEl = document.getElementById("metric-hj-total-cap");
+    const capWyEl = document.getElementById("metric-hj-total-cap-wy");
+    if (capEl) {
+        const cap = latestItem.total_market_cap_yi || 0;
+        capEl.innerText = `${cap.toLocaleString()} 亿元`;
+        if (capWyEl) {
+            capWyEl.innerText = `折合 ${(cap / 10000).toFixed(2)} 万亿元 (最新 ${latestItem.report_name || ''})`;
+        }
+    }
+
+    const sharesEl = document.getElementById("metric-hj-total-shares");
+    if (sharesEl) {
+        const shares = latestItem.total_shares_yi || 0;
+        sharesEl.innerText = `${shares.toLocaleString()} 亿股`;
+    }
+
+    const invCapEl = document.getElementById("metric-hj-inv-cap");
+    const invSharesEl = document.getElementById("metric-hj-inv-shares");
+    if (invCapEl) {
+        invCapEl.innerText = `${(latestItem.invest_cap_yi || 0).toLocaleString()} 亿元`;
+        if (invSharesEl) {
+            invSharesEl.innerText = `持股: ${(latestItem.invest_shares_yi || 0).toLocaleString()} 亿股 (${latestItem.invest_count || 0} 只)`;
+        }
+    }
+
+    const astCapEl = document.getElementById("metric-hj-ast-cap");
+    const astSharesEl = document.getElementById("metric-hj-ast-shares");
+    if (astCapEl) {
+        astCapEl.innerText = `${(latestItem.asset_cap_yi || 0).toLocaleString()} 亿元`;
+        if (astSharesEl) {
+            astSharesEl.innerText = `持股: ${(latestItem.asset_shares_yi || 0).toLocaleString()} 亿股 (${latestItem.asset_count || 0} 只)`;
+        }
+    }
+
+    const zjCapEl = document.getElementById("metric-hj-zj-cap");
+    const zjSharesEl = document.getElementById("metric-hj-zj-shares");
+    if (zjCapEl) {
+        zjCapEl.innerText = `${(latestItem.zhengjin_cap_yi || 0).toLocaleString()} 亿元`;
+        if (zjSharesEl) {
+            zjSharesEl.innerText = `持股: ${(latestItem.zhengjin_shares_yi || 0).toLocaleString()} 亿股 (${latestItem.zhengjin_count || 0} 只)`;
+        }
+    }
+
+    const countEl = document.getElementById("metric-hj-stock-count");
+    if (countEl) {
+        countEl.innerText = `${latestItem.total_count || 0} 只`;
+    }
+}
+
+function renderHuijinTotalChart(data) {
+    const chartDom = document.getElementById("huijin-total-trend-chart");
+    if (!chartDom) return;
+
+    if (!huijinTotalChartInstance) {
+        huijinTotalChartInstance = echarts.init(chartDom);
+    }
+
+    const dates = data.dates || [];
+    const caps = data.caps || [];
+    const shares = data.shares || [];
+    const reportNames = data.report_names || [];
+    const investCaps = data.invest_caps || [];
+    const assetCaps = data.asset_caps || [];
+    const zjCaps = data.zhengjin_caps || [];
+    const counts = data.stock_counts || [];
+
+    const option = {
+        backgroundColor: 'transparent',
+        animation: false,
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'cross', lineStyle: { color: '#fbbf24', type: 'dashed' } },
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            borderColor: '#334155',
+            textStyle: { color: '#f8fafc', fontSize: 12 },
+            formatter: function(params) {
+                if (!params || !params.length) return '';
+                const idx = params[0].dataIndex;
+                const d = dates[idx];
+                const rName = reportNames[idx];
+                const cap = caps[idx];
+                const sh = shares[idx];
+                const inv = investCaps[idx] || 0;
+                const ast = assetCaps[idx] || 0;
+                const zj = zjCaps[idx] || 0;
+                const cnt = counts[idx] || 0;
+
+                return `
+                    <div style="font-weight:bold; color:#fbbf24; font-size:13px; margin-bottom:4px;">${d} (${rName})</div>
+                    <div style="font-size:13px;"><b>证金汇金总市值:</b> <span style="color:#fbbf24; font-weight:800;">${cap.toLocaleString()} 亿元</span> (${(cap/10000).toFixed(2)}万亿)</div>
+                    <div style="font-size:12px;"><b>证金汇金总股数:</b> <span style="color:#38bdf8; font-weight:700;">${sh.toLocaleString()} 亿股</span></div>
+                    <div style="margin-top:6px; padding-top:4px; border-top:1px dashed #334155; font-size:11px; display:grid; grid-template-columns:1fr 1fr; gap:4px 10px;">
+                        <div>汇金投资: <span style="color:#f97316; font-weight:bold;">${inv.toLocaleString()} 亿</span></div>
+                        <div>汇金资管: <span style="color:#a855f7; font-weight:bold;">${ast.toLocaleString()} 亿</span></div>
+                        <div>证金公司: <span style="color:#06b6d4; font-weight:bold;">${zj.toLocaleString()} 亿</span></div>
+                        <div>重仓只数: <span style="color:#10b981; font-weight:bold;">${cnt} 只</span></div>
+                    </div>
+                `;
+            }
+        },
+        legend: {
+            data: ['证金汇金合计市值 (亿元)', '证金汇金合计股数 (亿股)', '汇金投资市值', '汇金资管市值', '证金公司市值'],
+            selected: {
+                '证金汇金合计市值 (亿元)': true,
+                '证金汇金合计股数 (亿股)': true,
+                '汇金投资市值': false,
+                '汇金资管市值': false,
+                '证金公司市值': false
+            },
+            textStyle: { color: '#cbd5e1', fontSize: 11 },
+            top: 0,
+            right: 15
+        },
+        grid: {
+            left: '60px',
+            right: '65px',
+            top: '35px',
+            bottom: '45px'
+        },
+        xAxis: {
+            type: 'category',
+            data: dates,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: '#334155' } },
+            axisLabel: {
+                color: '#94a3b8',
+                fontSize: 11,
+                formatter: function(val, idx) {
+                    return reportNames[idx] || val;
+                }
+            }
+        },
+        yAxis: [
+            {
+                type: 'value',
+                name: '持仓市值 (亿元)',
+                position: 'left',
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { lineStyle: { color: '#1e293b' } },
+                axisLabel: { color: '#fbbf24', formatter: '{value} 亿' }
+            },
+            {
+                type: 'value',
+                name: '持仓总股数 (亿股)',
+                position: 'right',
+                axisLine: { lineStyle: { color: '#334155' } },
+                splitLine: { show: false },
+                axisLabel: { color: '#38bdf8', formatter: '{value} 亿股' }
+            }
+        ],
+        dataZoom: [
+            {
+                type: 'inside',
+                start: 0,
+                end: 100
+            },
+            {
+                show: true,
+                type: 'slider',
+                bottom: '2px',
+                start: 0,
+                end: 100,
+                borderColor: '#334155',
+                fillerColor: 'rgba(234, 179, 8, 0.15)',
+                textStyle: { color: '#94a3b8' }
+            }
+        ],
+        series: [
+            {
+                name: '证金汇金合计市值 (亿元)',
+                type: 'line',
+                data: caps,
+                smooth: true,
+                showSymbol: true,
+                symbolSize: 6,
+                lineStyle: { width: 3, color: '#fbbf24' },
+                itemStyle: { color: '#fbbf24' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(251, 191, 36, 0.35)' },
+                        { offset: 1, color: 'rgba(251, 191, 36, 0.0)' }
+                    ])
+                }
+            },
+            {
+                name: '证金汇金合计股数 (亿股)',
+                type: 'bar',
+                yAxisIndex: 1,
+                data: shares,
+                barWidth: 10,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(56, 189, 248, 0.8)' },
+                        { offset: 1, color: 'rgba(56, 189, 248, 0.2)' }
+                    ]),
+                    borderRadius: [3, 3, 0, 0]
+                }
+            },
+            {
+                name: '汇金投资市值',
+                type: 'line',
+                data: investCaps,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { width: 1.5, color: '#f97316', type: 'dashed' },
+                itemStyle: { color: '#f97316' }
+            },
+            {
+                name: '汇金资管市值',
+                type: 'line',
+                data: assetCaps,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { width: 1.5, color: '#a855f7', type: 'dashed' },
+                itemStyle: { color: '#a855f7' }
+            },
+            {
+                name: '证金公司市值',
+                type: 'line',
+                data: zjCaps,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { width: 1.5, color: '#06b6d4', type: 'dashed' },
+                itemStyle: { color: '#06b6d4' }
+            }
+        ]
+    };
+
+    huijinTotalChartInstance.setOption(option, true);
+}
+
+function renderHuijinTotalTable(records) {
+    const tbody = document.getElementById("huijin-total-table-tbody");
+    if (!tbody) return;
+
+    if (!records || !records.length) {
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; padding:25px; color:#94a3b8;">暂无证金汇金总量时序数据</td></tr>`;
+        return;
+    }
+
+    let html = "";
+    records.forEach(r => {
+        const cap = r.total_market_cap_yi || 0;
+        const capWy = (cap / 10000).toFixed(2);
+        const chgCap = r.cap_change_yi || 0;
+        const chgCapPct = r.cap_change_pct || 0;
+        const chgShares = r.shares_change_yi || 0;
+        const isUp = chgCap >= 0;
+
+        html += `
+            <tr style="border-bottom:1px solid #1e293b; transition: background 0.15s;" onmouseover="this.style.background='rgba(30,41,59,0.5)'" onmouseout="this.style.background='transparent'">
+                <td style="font-family:monospace; color:#38bdf8; font-weight:700;">${r.report_date}</td>
+                <td><b style="color:#e2e8f0;">${r.report_name}</b></td>
+                <td style="font-weight:800; color:#fbbf24; font-size:14px;">${cap.toLocaleString()} 亿元</td>
+                <td style="font-weight:700; color:#fde047;">${capWy} 万亿</td>
+                <td style="font-weight:700; color:${isUp ? '#ef4444' : '#10b981'};">
+                    ${chgCap > 0 ? '+' : ''}${chgCap.toLocaleString()} 亿
+                </td>
+                <td style="font-weight:700; color:${isUp ? '#ef4444' : '#10b981'};">
+                    ${chgCapPct > 0 ? '+' : ''}${chgCapPct}%
+                </td>
+                <td style="font-weight:700; color:#38bdf8;">${(r.total_shares_yi || 0).toLocaleString()} 亿股</td>
+                <td style="color:${chgShares >= 0 ? '#ef4444' : '#10b981'}; font-weight:600;">
+                    ${chgShares > 0 ? '+' : ''}${chgShares.toLocaleString()} 亿股
+                </td>
+                <td style="color:#f97316; font-weight:600;">${(r.invest_cap_yi || 0).toLocaleString()} 亿</td>
+                <td style="color:#a855f7; font-weight:600;">${(r.asset_cap_yi || 0).toLocaleString()} 亿</td>
+                <td style="color:#06b6d4; font-weight:600;">${(r.zhengjin_cap_yi || 0).toLocaleString()} 亿</td>
+                <td>
+                    <span class="tag" style="background:rgba(16,185,129,0.15); color:#34d399; font-weight:bold;">
+                        ${r.total_count} 只
+                    </span>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+
+
+
+
