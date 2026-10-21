@@ -213,49 +213,75 @@ def fetch_broad_etf_flows():
 
 def fetch_history_klines_since_2015(sym: str, period: str = "day", start_date: str = "2015-01-01", end_date: str = "2026-12-31"):
     """
-    自 2015 年起抓取完整的日K/周K/月K行情线 (覆盖 10 年超级跨度)
+    自 2015 年起抓取完整的日K/周K/月K行情线 (覆盖超长历史跨度)
+    优先采用高可用新浪财经接口直连，具备免WAF、稳定高速、支持各大宽基ETF特性
     """
-    p_type = period if period in ['week', 'month'] else 'day'
-    if p_type == 'month':
-        # 月K拉取 300 条即可覆盖从 2012 年甚至更早以来的所有月线
-        url = f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={sym},month,,,300,qfq"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        try:
-            with urllib.request.urlopen(req, timeout=6) as r:
-                d = json.loads(r.read().decode('utf-8'))
-                sym_d = d.get('data', {}).get(sym, {})
-                kl = sym_d.get('qfqmonth', sym_d.get('month', []))
-                return [k for k in kl if k[0] >= start_date]
-        except Exception as e:
-            logger.error(f"Error fetching month klines for {sym}: {e}")
-            return []
-    else:
-        # 日K和周K分页向历史回溯，拉取 2015-01-01 至今
-        all_klines = []
-        cur_end = end_date
-        step = 640 if p_type == 'day' else 600
-        for _ in range(6):  # 翻页覆盖 10 年以上
-            url = f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={sym},{p_type},{start_date},{cur_end},{step},qfq"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            try:
-                with urllib.request.urlopen(req, timeout=6) as r:
-                    d = json.loads(r.read().decode('utf-8'))
-                    sym_d = d.get('data', {}).get(sym, {})
-                    kl = sym_d.get(f'qfq{p_type}', sym_d.get(p_type, []))
-                    if not kl:
-                        break
-                    if all_klines and kl[-1][0] >= all_klines[0][0]:
-                        kl = [k for k in kl if k[0] < all_klines[0][0]]
-                    if not kl:
-                        break
-                    all_klines = kl + all_klines
-                    cur_end = kl[0][0]
-                    if cur_end <= start_date or len(kl) < 5:
-                        break
-            except Exception as e:
-                logger.error(f"Error fetching {p_type} klines for {sym}: {e}")
-                break
-        return [k for k in all_klines if k[0] >= start_date]
+    try:
+        c = str(sym).lower().strip()
+        if not (c.startswith("sh") or c.startswith("sz") or c.startswith("bj")):
+            prefix = "sh" if (c.startswith("6") or c.startswith("9") or c.startswith("5")) else ("sz" if (c.startswith("0") or c.startswith("3") or c.startswith("1")) else "bj")
+            c = f"{prefix}{c}"
+
+        scale_map = {"day": 240, "week": 1200, "month": 7200, "year": 7200}
+        scale = scale_map.get(period, 240)
+        req_len = 1023
+        url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={c}&scale={scale}&ma=no&datalen={req_len}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://finance.sina.com.cn"}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            raw_list = json.loads(r.read().decode("gbk"))
+
+        if raw_list and isinstance(raw_list, list):
+            klines = []
+            for it in raw_list:
+                klines.append([
+                    it["day"],
+                    float(it["open"]),
+                    float(it["close"]),
+                    float(it["high"]),
+                    float(it["low"]),
+                    float(it["volume"]) / 100.0
+                ])
+            if klines:
+                return [k for k in klines if k[0] >= start_date]
+    except Exception as e:
+        logger.debug(f"新浪历史K线接口异常 ({sym}): {e}")
+
+    # 备用源：东财通道
+    try:
+        c = str(sym).lower().strip()
+        if c.startswith("sh"):
+            secid = f"1.{c[2:]}"
+        elif c.startswith("sz") or c.startswith("bj"):
+            secid = f"0.{c[2:]}"
+        elif c.startswith(("6", "9", "5")):
+            secid = f"1.{c}"
+        elif c.startswith(("0", "3", "1", "4", "8", "2")):
+            secid = f"0.{c}"
+        else:
+            secid = f"1.{c}"
+
+        p_type = period if period in ['week', 'month'] else 'day'
+        klt_map = {'day': 101, 'week': 102, 'month': 103}
+        klt = klt_map.get(p_type, 101)
+        beg = start_date.replace("-", "")
+
+        url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt={klt}&fqt=1&beg={beg}&end=20500101&lmt=3000"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://quote.eastmoney.com/'})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            d = json.loads(r.read().decode('utf-8'))
+            raw_list = d.get('data', {}).get('klines', [])
+            klines = []
+            for line in raw_list:
+                parts = line.split(',')
+                if len(parts) >= 6:
+                    klines.append([parts[0], float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]), float(parts[5])])
+            if klines:
+                return [k for k in klines if k[0] >= start_date]
+    except Exception:
+        pass
+
+    return []
 
 def fetch_etf_kline_with_flow(code: str, period: str = "day", limit: int = 120, start_date: str = "2015-01-01"):
     """

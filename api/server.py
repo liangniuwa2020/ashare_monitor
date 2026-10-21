@@ -1287,7 +1287,14 @@ if os.path.exists(web_dir):
 def index_page():
     index_file = os.path.join(web_dir, "index.html")
     if os.path.exists(index_file):
-        return FileResponse(index_file)
+        return FileResponse(
+            index_file,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return {"message": "A-Share Monitor API is running. UI is initializing..."}
 
 from core.etf_analyzer import fetch_broad_etf_flows, fetch_etf_kline_with_flow, fetch_all_broad_aggregated_kline_flow, fetch_huijin_holding_changes

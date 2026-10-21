@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>A股全息信息收集与监控系统 - 量化龙头作战看板</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/css/style.css">
-    <!-- ECharts CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css?v=2.1">
+    <!-- ECharts 本地静态资源 (彻底摆脱 CDN 拦截与断连问题) -->
+    <script src="/static/js/echarts.min.js?v=2.1"></script>
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -1335,6 +1338,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2.1"></script>
 </body>
 </html>

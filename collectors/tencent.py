@@ -77,110 +77,147 @@ class TencentCollector(BaseCollector):
             logger.error(f"批量请求腾讯行情失败: {e}")
             return {}
 
+    @staticmethod
+    def _to_em_secid(code: str) -> str:
+        c = str(code).lower().strip()
+        if c.startswith("sh"):
+            return f"1.{c[2:]}"
+        if c.startswith("sz") or c.startswith("bj"):
+            return f"0.{c[2:]}"
+        if c.startswith(("6", "9", "5")):
+            return f"1.{c}"
+        if c.startswith(("0", "3", "1", "4", "8", "2")):
+            return f"0.{c}"
+        return f"1.{c}"
+
     def get_kline_data(self, stock_code, period="day", limit=120):
         """
-        获取单只股票的前复权 K 线数据
+        获取单只股票/指数/ETF的前复权 K 线数据
         period 支持: 'day' (日线), 'week' (周线), 'month' (月线), 'year' (年线)
         返回: [{"date": "2026-09-30", "open": 1239.5, "close": 1258.6, "high": 1268.0, "low": 1236.0, "volume": 38331}, ...]
+        优先使用新浪高可用接口（低延迟、免封禁、无 501 拦截），自动兼容指数、ETF与全市场标的
         """
-        raw_code = stock_code.lower()
-        if raw_code.startswith("sh") or raw_code.startswith("sz") or raw_code.startswith("bj"):
+        raw_code = str(stock_code).lower().strip()
+        if raw_code.startswith(("sh", "sz", "bj")):
             symbol = raw_code
         else:
-            prefix = "sh" if (raw_code.startswith("6") or raw_code.startswith("9")) else ("sz" if (raw_code.startswith("0") or raw_code.startswith("3")) else "bj")
+            prefix = "sh" if (raw_code.startswith("6") or raw_code.startswith("9") or raw_code.startswith("5")) else ("sz" if (raw_code.startswith("0") or raw_code.startswith("3") or raw_code.startswith("1")) else "bj")
             symbol = f"{prefix}{raw_code}"
-        
-        # 年线通过月线聚合，提供长达数十年的真实历史年K线
-        target_period = "month" if period == "year" else period
-        req_limit = 320 if period == "year" else limit
-        
-        url = f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},{target_period},,,{req_limit},qfq"
+
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            scale_map = {"day": 240, "week": 1200, "month": 7200, "year": 7200}
+            scale = scale_map.get(period, 240)
+            req_len = min(1023, max(limit, 120))
+            url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={symbol}&scale={scale}&ma=no&datalen={req_len}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://finance.sina.com.cn"}
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as r:
                 import json
-                data = json.loads(resp.read().decode("utf-8"))
-            
-            st_data = data.get("data", {}).get(symbol, {})
-            candle_list = st_data.get(f"qfq{target_period}", st_data.get(target_period, []))
-            
-            if period == "year":
-                # 按年份聚合月K线为年K线
-                yearly_dict = {}
-                for m in candle_list:
-                    if len(m) >= 6:
-                        y_key = m[0].split("-")[0]
-                        o_val = float(m[1])
-                        c_val = float(m[2])
-                        h_val = float(m[3])
-                        l_val = float(m[4])
-                        v_val = float(m[5])
+                raw_list = json.loads(r.read().decode("gbk"))
+
+            if raw_list and isinstance(raw_list, list):
+                if period == "year":
+                    yearly_dict = {}
+                    for it in raw_list:
+                        y_key = it["day"].split("-")[0]
+                        o_val = float(it["open"])
+                        c_val = float(it["close"])
+                        h_val = float(it["high"])
+                        l_val = float(it["low"])
+                        v_val = float(it["volume"]) / 100.0
                         if y_key not in yearly_dict:
-                            yearly_dict[y_key] = {
-                                "date": y_key,
-                                "open": o_val,
-                                "close": c_val,
-                                "high": h_val,
-                                "low": l_val,
-                                "volume": v_val
-                            }
+                            yearly_dict[y_key] = {"date": y_key, "open": o_val, "close": c_val, "high": h_val, "low": l_val, "volume": v_val}
                         else:
                             yearly_dict[y_key]["close"] = c_val
                             yearly_dict[y_key]["high"] = max(yearly_dict[y_key]["high"], h_val)
                             yearly_dict[y_key]["low"] = min(yearly_dict[y_key]["low"], l_val)
                             yearly_dict[y_key]["volume"] += v_val
-                return list(yearly_dict.values())[-limit:]
+                    return list(yearly_dict.values())[-limit:]
 
-            klines = []
-            for item in candle_list:
-                # 格式: [date, open, close, high, low, volume, ...]
-                if len(item) >= 6:
+                klines = []
+                for it in raw_list:
                     klines.append({
-                        "date": item[0],
-                        "open": float(item[1]),
-                        "close": float(item[2]),
-                        "high": float(item[3]),
-                        "low": float(item[4]),
-                        "volume": float(item[5])
+                        "date": it["day"],
+                        "open": float(it["open"]),
+                        "close": float(it["close"]),
+                        "high": float(it["high"]),
+                        "low": float(it["low"]),
+                        "volume": float(it["volume"]) / 100.0
                     })
-            return klines[-limit:]
+                if klines:
+                    return klines[-limit:]
         except Exception as e:
-            logger.error(f"获取股票 {stock_code} {period}线异常: {e}")
-            return []
+            logger.debug(f"新浪K线获取异常 ({stock_code}): {e}")
+
+        # 备用源：东财通道
+        try:
+            secid = self._to_em_secid(stock_code)
+            klt_map = {"day": 101, "week": 102, "month": 103, "year": 103}
+            klt = klt_map.get(period, 101)
+            req_limit = 320 if period == "year" else min(3000, max(limit, 120))
+            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt={klt}&fqt=1&end=20500101&lmt={req_limit}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                import json
+                data = json.loads(resp.read().decode("utf-8"))
+            klines_raw = data.get("data", {}).get("klines", [])
+            if klines_raw:
+                klines = []
+                for line in klines_raw:
+                    parts = line.split(",")
+                    if len(parts) >= 6:
+                        klines.append({
+                            "date": parts[0],
+                            "open": float(parts[1]),
+                            "close": float(parts[2]),
+                            "high": float(parts[3]),
+                            "low": float(parts[4]),
+                            "volume": float(parts[5]),
+                            "amount": float(parts[6]) if len(parts) > 6 else 0.0
+                        })
+                if klines:
+                    return klines[-limit:]
+        except Exception:
+            pass
+
+        return []
 
     def get_intraday_minute(self, stock_code):
         """
         获取股票即时分时走势数据
         返回: [{"time": "09:30", "price": 1239.5, "volume": 1200, "avg_price": 1239.5}, ...]
+        优先使用新浪5分钟K线聚合日内走势
         """
-        prefix = "sh" if (stock_code.startswith("6") or stock_code.startswith("9")) else ("sz" if (stock_code.startswith("0") or stock_code.startswith("3")) else "bj")
-        symbol = f"{prefix}{stock_code}"
-        url = f"http://web.ifzq.gtimg.cn/appstock/app/minute/query?code={symbol}"
+        raw_code = str(stock_code).lower().strip()
+        if raw_code.startswith(("sh", "sz", "bj")):
+            symbol = raw_code
+        else:
+            prefix = "sh" if (raw_code.startswith("6") or raw_code.startswith("9") or raw_code.startswith("5")) else ("sz" if (raw_code.startswith("0") or raw_code.startswith("3") or raw_code.startswith("1")) else "bj")
+            symbol = f"{prefix}{raw_code}"
+
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={symbol}&scale=5&ma=no&datalen=48"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://finance.sina.com.cn"}
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as r:
                 import json
-                data = json.loads(resp.read().decode("utf-8"))
-            
-            min_lines = data.get("data", {}).get(symbol, {}).get("data", {}).get("data", [])
-            minutes = []
-            for line in min_lines:
-                # 格式: "0930 1239.50 1200 1487400.00"
-                parts = line.split(" ")
-                if len(parts) >= 3:
-                    raw_time = parts[0]
-                    formatted_time = f"{raw_time[:2]}:{raw_time[2:]}" if len(raw_time) == 4 else raw_time
-                    price = float(parts[1])
-                    vol = int(parts[2])
-                    total_amt = float(parts[3]) if len(parts) > 3 else (price * vol)
-                    avg_p = round(total_amt / max(1, vol), 2) if vol > 0 else price
+                raw_list = json.loads(r.read().decode("gbk"))
+
+            if raw_list and isinstance(raw_list, list):
+                minutes = []
+                for it in raw_list:
+                    t_str = it["day"].split(" ")[-1][:5]
+                    p = float(it["close"])
+                    v = int(float(it["volume"]) / 100.0)
                     minutes.append({
-                        "time": formatted_time,
-                        "price": price,
-                        "volume": vol,
-                        "avg_price": avg_p
+                        "time": t_str,
+                        "price": p,
+                        "volume": v,
+                        "avg_price": p
                     })
-            return minutes
+                if minutes:
+                    return minutes
         except Exception as e:
-            logger.error(f"获取股票 {stock_code} 即时分时异常: {e}")
-            return []
+            logger.debug(f"获取分时异常 ({stock_code}): {e}")
+
+        return []

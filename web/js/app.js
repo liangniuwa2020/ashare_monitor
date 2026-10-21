@@ -505,6 +505,7 @@ function renderMarketHeatChart(history) {
     };
 
     marketHeatChartInstance.setOption(option, true);
+    setTimeout(() => { if (marketHeatChartInstance) marketHeatChartInstance.resize(); }, 50);
 
     // 绑定 dataZoom 拖动事件：更新徽章与已打开的点位百分比
     marketHeatChartInstance.off('dataZoom');
@@ -902,6 +903,7 @@ function renderGuornSentimentChart(history, indexName) {
     };
 
     guornSentimentChartInstance.setOption(option, true);
+    setTimeout(() => { if (guornSentimentChartInstance) guornSentimentChartInstance.resize(); }, 50);
 
     // 绑定 dataZoom 拖拽事件
     guornSentimentChartInstance.off('dataZoom');
@@ -2038,6 +2040,7 @@ function renderGuornIntensityChart(history) {
     };
 
     guornIntensityChartInstance.setOption(option, true);
+    setTimeout(() => { if (guornIntensityChartInstance) guornIntensityChartInstance.resize(); }, 50);
 
     // 绑定 dataZoom 事件更新输入框日期
     guornIntensityChartInstance.off('dataZoom');
@@ -4343,6 +4346,7 @@ function renderEtfCategoryCharts(categories) {
             }]
         };
         etfFlowChartInstance.setOption(flowOption);
+        setTimeout(() => { if (etfFlowChartInstance) etfFlowChartInstance.resize(); }, 50);
     }
 
     // 2. 宽基体量成交分布饼图
@@ -4393,6 +4397,7 @@ function renderEtfCategoryCharts(categories) {
             }]
         };
         etfAmountChartInstance.setOption(pieOption);
+        setTimeout(() => { if (etfAmountChartInstance) etfAmountChartInstance.resize(); }, 50);
     }
 }
 
@@ -4865,6 +4870,7 @@ function renderEtfKlineFlowChart(data) {
     };
 
     etfKlineFlowChartInstance.setOption(option, true);
+    setTimeout(() => { if (etfKlineFlowChartInstance) etfKlineFlowChartInstance.resize(); }, 50);
 }
 
 function zoomEtfKlineFast(type) {
