@@ -133,6 +133,8 @@ function switchMainView(viewType) {
             if (etfFlowChartInstance) etfFlowChartInstance.resize();
             if (etfAmountChartInstance) etfAmountChartInstance.resize();
             if (etfKlineFlowChartInstance) etfKlineFlowChartInstance.resize();
+            if (huijinTotalChartInstance) huijinTotalChartInstance.resize();
+            if (huijinEtfChartInstance) huijinEtfChartInstance.resize();
         }, 80);
     } else if (viewType === "guorn") {
         if (btnGuorn) btnGuorn.className = "primary-btn";
@@ -5301,6 +5303,17 @@ function renderHuijinEtfTrack(track) {
 
     if (!huijinEtfChartInstance) {
         huijinEtfChartInstance = echarts.init(chartDom);
+        window.addEventListener('resize', () => {
+            if (huijinEtfChartInstance) huijinEtfChartInstance.resize();
+        });
+    }
+
+    if (!chartDom._hasResizeObserver && window.ResizeObserver) {
+        const ro = new ResizeObserver(() => {
+            if (huijinEtfChartInstance) huijinEtfChartInstance.resize();
+        });
+        ro.observe(chartDom);
+        chartDom._hasResizeObserver = true;
     }
 
     const periods = track.map(d => `${d.period_name}\n${d.date.substring(0, 7)}`);
@@ -5341,10 +5354,11 @@ function renderHuijinEtfTrack(track) {
             right: 15
         },
         grid: {
-            left: '60px',
-            right: '65px',
-            top: '35px',
-            bottom: '40px'
+            left: '3%',
+            right: '4%',
+            top: '45px',
+            bottom: '40px',
+            containLabel: true
         },
         xAxis: {
             type: 'category',
@@ -5419,6 +5433,9 @@ function renderHuijinEtfTrack(track) {
     };
 
     huijinEtfChartInstance.setOption(option, true);
+    setTimeout(() => {
+        if (huijinEtfChartInstance) huijinEtfChartInstance.resize();
+    }, 50);
 }
 
 function renderHuijinTotalCards(data) {
@@ -5479,6 +5496,17 @@ function renderHuijinTotalChart(data) {
 
     if (!huijinTotalChartInstance) {
         huijinTotalChartInstance = echarts.init(chartDom);
+        window.addEventListener('resize', () => {
+            if (huijinTotalChartInstance) huijinTotalChartInstance.resize();
+        });
+    }
+
+    if (!chartDom._hasResizeObserver && window.ResizeObserver) {
+        const ro = new ResizeObserver(() => {
+            if (huijinTotalChartInstance) huijinTotalChartInstance.resize();
+        });
+        ro.observe(chartDom);
+        chartDom._hasResizeObserver = true;
     }
 
     const dates = data.dates || [];
@@ -5533,24 +5561,28 @@ function renderHuijinTotalChart(data) {
                 '汇金资管市值': false,
                 '证金公司市值': false
             },
-            textStyle: { color: '#cbd5e1', fontSize: 11 },
-            top: 0,
+            textStyle: { color: '#cbd5e1', fontSize: 12 },
+            top: 4,
             right: 15
         },
         grid: {
-            left: '60px',
-            right: '65px',
-            top: '35px',
-            bottom: '45px'
+            left: '3%',
+            right: '4%',
+            top: '55px',
+            bottom: '50px',
+            containLabel: true
         },
         xAxis: {
             type: 'category',
             data: dates,
             boundaryGap: true,
             axisLine: { lineStyle: { color: '#334155' } },
+            axisTick: { alignWithLabel: true, lineStyle: { color: '#475569' } },
             axisLabel: {
                 color: '#94a3b8',
                 fontSize: 11,
+                rotate: 30,
+                interval: 'auto',
                 formatter: function(val, idx) {
                     return reportNames[idx] || val;
                 }
@@ -5559,19 +5591,30 @@ function renderHuijinTotalChart(data) {
         yAxis: [
             {
                 type: 'value',
-                name: '持仓市值 (亿元)',
+                name: '持仓市值',
+                nameTextStyle: { color: '#fbbf24', fontSize: 12, padding: [0, 0, 4, 0] },
                 position: 'left',
-                axisLine: { lineStyle: { color: '#334155' } },
-                splitLine: { lineStyle: { color: '#1e293b' } },
-                axisLabel: { color: '#fbbf24', formatter: '{value} 亿' }
+                axisLine: { show: true, lineStyle: { color: '#fbbf24' } },
+                splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+                axisLabel: {
+                    color: '#fbbf24',
+                    formatter: function(val) {
+                        if (val >= 10000) return (val / 10000).toFixed(1) + ' 万亿';
+                        return val + ' 亿';
+                    }
+                }
             },
             {
                 type: 'value',
-                name: '持仓总股数 (亿股)',
+                name: '持仓总股数',
+                nameTextStyle: { color: '#38bdf8', fontSize: 12, padding: [0, 0, 4, 0] },
                 position: 'right',
-                axisLine: { lineStyle: { color: '#334155' } },
+                axisLine: { show: true, lineStyle: { color: '#38bdf8' } },
                 splitLine: { show: false },
-                axisLabel: { color: '#38bdf8', formatter: '{value} 亿股' }
+                axisLabel: {
+                    color: '#38bdf8',
+                    formatter: '{value} 亿股'
+                }
             }
         ],
         dataZoom: [
@@ -5583,11 +5626,13 @@ function renderHuijinTotalChart(data) {
             {
                 show: true,
                 type: 'slider',
-                bottom: '2px',
+                bottom: '4px',
+                height: 22,
                 start: 0,
                 end: 100,
                 borderColor: '#334155',
-                fillerColor: 'rgba(234, 179, 8, 0.15)',
+                fillerColor: 'rgba(234, 179, 8, 0.18)',
+                handleStyle: { color: '#fbbf24', borderColor: '#d97706' },
                 textStyle: { color: '#94a3b8' }
             }
         ],
@@ -5613,10 +5658,10 @@ function renderHuijinTotalChart(data) {
                 type: 'bar',
                 yAxisIndex: 1,
                 data: shares,
-                barWidth: 10,
+                barMaxWidth: 20,
                 itemStyle: {
                     color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(56, 189, 248, 0.8)' },
+                        { offset: 0, color: 'rgba(56, 189, 248, 0.85)' },
                         { offset: 1, color: 'rgba(56, 189, 248, 0.2)' }
                     ]),
                     borderRadius: [3, 3, 0, 0]
@@ -5653,6 +5698,9 @@ function renderHuijinTotalChart(data) {
     };
 
     huijinTotalChartInstance.setOption(option, true);
+    setTimeout(() => {
+        if (huijinTotalChartInstance) huijinTotalChartInstance.resize();
+    }, 50);
 }
 
 function renderHuijinTotalTable(records) {
