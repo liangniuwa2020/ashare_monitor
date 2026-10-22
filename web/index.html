@@ -823,6 +823,17 @@
                         <button class="chart-tab-btn" onclick="zoomEtfKlineFast('3_year')">3年</button>
                         <button class="chart-tab-btn active" id="btn-etf-zoom-all" onclick="zoomEtfKlineFast('all')">10年全部</button>
                     </div>
+
+                    <!-- 宽基K线均线设置 -->
+                    <div style="display:flex; align-items:center; gap:6px; font-size:12px; background:rgba(30, 41, 59, 0.7); padding:3px 8px; border-radius:6px; border:1px solid #334155;">
+                        <span style="color:#fbbf24; font-weight:700;">📈 均线MA:</span>
+                        <label style="cursor:pointer; display:inline-flex; align-items:center; gap:3px; color:#cbd5e1;">
+                            <input type="checkbox" id="etf-ma-toggle-enable" checked onchange="toggleEtfMAEnable(this.checked)" style="cursor:pointer;">
+                            开启
+                        </label>
+                        <input type="text" id="etf-ma-periods-input" value="5,10,20" placeholder="如: 5,10,20,120" style="width:110px; background:#0f172a; border:1px solid #475569; color:#f8fafc; padding:1px 5px; border-radius:4px; font-size:11px; font-family:monospace; outline:none;" onkeydown="if(event.key==='Enter') applyEtfMAPeriods()">
+                        <button class="primary-btn" onclick="applyEtfMAPeriods()" style="padding:1px 6px; font-size:11px; cursor:pointer;">应用</button>
+                    </div>
                 </div>
             </div>
 
@@ -1328,6 +1339,19 @@
                         📝 备注（高人气/热度分析）
                     </button>
                 </div>
+                <!-- 均线 MA 设置工具条 (仅在K线模式显示) -->
+                <div id="stock-ma-control-bar" style="display:none; align-items:center; gap:8px; font-size:12px; background:rgba(30, 41, 59, 0.7); padding:4px 10px; border-radius:6px; border:1px solid #334155;">
+                    <span style="color:#fbbf24; font-weight:700;">📈 均线MA:</span>
+                    <label style="cursor:pointer; display:inline-flex; align-items:center; gap:3px; color:#cbd5e1;">
+                        <input type="checkbox" id="stock-ma-toggle-enable" checked onchange="toggleStockMAEnable(this.checked)" style="cursor:pointer;">
+                        开启均线
+                    </label>
+                    <span style="color:#64748b;">|</span>
+                    <span style="color:#94a3b8;">参数(逗号分隔):</span>
+                    <input type="text" id="stock-ma-periods-input" value="5,10,20" placeholder="例如: 5,8,10,20,120" style="width:130px; background:#0f172a; border:1px solid #475569; color:#f8fafc; padding:2px 6px; border-radius:4px; font-size:12px; font-family:monospace; outline:none;" onkeydown="if(event.key==='Enter') applyStockMAPeriods()">
+                    <button class="primary-btn" onclick="applyStockMAPeriods()" style="padding:2px 8px; font-size:11px; cursor:pointer;">应用</button>
+                    <button class="chart-tab-btn" onclick="resetStockMAPeriods()" style="padding:2px 6px; font-size:11px; cursor:pointer;" title="重置为默认 5,10,20">重置</button>
+                </div>
             </div>
 
             <!-- ECharts 图表容器 -->
@@ -1338,6 +1362,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=2.2"></script>
+    <script src="/static/js/app.js?v=2.3"></script>
 </body>
 </html>

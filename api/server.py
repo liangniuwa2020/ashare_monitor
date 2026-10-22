@@ -763,10 +763,11 @@ def get_lockup_events():
 @app.get("/api/stock/chart_data")
 def get_stock_chart_data(
     code: str = Query(..., description="股票代码，如 600519"),
-    period: str = Query("day", description="K线周期: day(日线), week(周线), month(月线), year(年线)")
+    period: str = Query("day", description="K线周期: day(日线), week(周线), month(月线), year(年线)"),
+    limit: int = Query(350, description="K线根数，默认350以便计算长周期均线")
 ):
     """返回单只股票指定周期K线（日/周/月/年）历史序列与今日即时分时数据，附带所属板块列表及板块实时涨跌幅"""
-    kline = tencent_collector.get_kline_data(code, period=period, limit=120)
+    kline = tencent_collector.get_kline_data(code, period=period, limit=max(limit, 350))
     minute = tencent_collector.get_intraday_minute(code)
     quote = tencent_collector.get_realtime_quotes([code]).get(code, {})
     try:

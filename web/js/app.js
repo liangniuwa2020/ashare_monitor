@@ -5,8 +5,18 @@ let currentValuationMetric = "pe"; // 'pe' or 'pb'
 let currentValuationPeriod = "day"; // 'day', 'week', 'month', 'year'
 let valuationChartInstance = null;
 let currentStockChartCode = null;
-let currentStockChartType = "minute"; // 'minute' or 'kline'
+let currentStockChartType = "minute"; // 'minute' or 'day', 'week', 'month', 'year', 'reason'
 let singleStockChartInstance = null;
+
+// 均线配置状态 (默认支持 5, 10, 20，并支持自定义)
+let stockMAConfig = {
+    enabled: true,
+    periods: [5, 10, 20]
+};
+let etfMAConfig = {
+    enabled: true,
+    periods: [5, 10, 20]
+};
 
 let marketHeatChartInstance = null;
 let currentMarketHeatPeriod = "day"; // 'day', 'week', 'month', 'year'
@@ -2847,6 +2857,12 @@ async function switchStockChartTab(type) {
 
     const chartDom = document.getElementById("single-stock-chart");
     const reasonDom = document.getElementById("stock-reason-container");
+    const maBarDom = document.getElementById("stock-ma-control-bar");
+
+    // 只有在K线模式(day, week, month, year)下才展示均线控制工具栏
+    if (maBarDom) {
+        maBarDom.style.display = (type !== "minute" && type !== "reason") ? "inline-flex" : "none";
+    }
 
     if (type === "reason") {
         if (chartDom) chartDom.style.display = "none";
@@ -2865,7 +2881,7 @@ async function switchStockChartTab(type) {
 
     // 若切换到特定K线周期 (day, week, month, year)，动态按周期拉取该周期的K线
     try {
-        const res = await fetch(`/api/stock/chart_data?code=${currentStockChartCode}&period=${type}`);
+        const res = await fetch(`/api/stock/chart_data?code=${currentStockChartCode}&period=${type}&limit=350`);
         const json = await res.json();
         if (json.status === "success") {
             cachedStockChartData.kline = json.kline;
@@ -2874,6 +2890,66 @@ async function switchStockChartTab(type) {
         }
     } catch (e) {
         console.error(`切换至 ${type} K线失败:`, e);
+    }
+}
+
+// 均线参数管理与解析通用方法
+function parseMAPeriods(str) {
+    if (!str) return [];
+    return str.split(/[,，\s]+/)
+        .map(s => parseInt(s.trim()))
+        .filter(n => !isNaN(n) && n > 0 && n <= 500);
+}
+
+const MA_COLOR_PALETTE = ['#f59e0b', '#38bdf8', '#ec4899', '#a855f7', '#10b981', '#06b6d4', '#e2e8f0', '#f43f5e'];
+
+function toggleStockMAEnable(checked) {
+    stockMAConfig.enabled = checked;
+    renderStockChart();
+}
+
+function applyStockMAPeriods() {
+    const input = document.getElementById("stock-ma-periods-input");
+    if (!input) return;
+    const periods = parseMAPeriods(input.value);
+    if (!periods || periods.length === 0) {
+        alert("请输入有效的均线周期数字，用逗号分隔，如: 5,10,20,120");
+        return;
+    }
+    stockMAConfig.periods = periods;
+    input.value = periods.join(',');
+    renderStockChart();
+}
+
+function resetStockMAPeriods() {
+    const input = document.getElementById("stock-ma-periods-input");
+    stockMAConfig.periods = [5, 10, 20];
+    stockMAConfig.enabled = true;
+    if (input) input.value = "5,10,20";
+    const chk = document.getElementById("stock-ma-toggle-enable");
+    if (chk) chk.checked = true;
+    renderStockChart();
+}
+
+function toggleEtfMAEnable(checked) {
+    etfMAConfig.enabled = checked;
+    if (currentEtfKlineCode) {
+        loadEtfKlineWithFlow(currentEtfKlineCode, currentEtfKlinePeriod);
+    }
+}
+
+function applyEtfMAPeriods() {
+    const input = document.getElementById("etf-ma-periods-input");
+    if (!input) return;
+    const periods = parseMAPeriods(input.value);
+    if (!periods || periods.length === 0) {
+        alert("请输入有效的均线周期数字，用逗号分隔，如: 5,10,20,120");
+        return;
+    }
+    etfMAConfig.periods = periods;
+    input.value = periods.join(',');
+    if (currentEtfKlineCode) {
+        loadEtfKlineWithFlow(currentEtfKlineCode, currentEtfKlinePeriod);
     }
 }
 
@@ -3247,15 +3323,45 @@ function renderStockChart() {
         const candleValues = klines.map(k => [k.open, k.close, k.low, k.high]);
         const vols = klines.map(k => k.volume);
 
+        // 动态计算自定义均线 (日线/周线/月线/年线通用)
+        const maSeriesList = [];
+        const legendData = [`${pTitle} (前复权)`];
+
+        if (stockMAConfig.enabled && stockMAConfig.periods && stockMAConfig.periods.length > 0) {
+            stockMAConfig.periods.forEach((p, idx) => {
+                const maVals = calculateMA(p, candleValues);
+                const color = MA_COLOR_PALETTE[idx % MA_COLOR_PALETTE.length];
+                const maName = `MA${p}`;
+                legendData.push(maName);
+                maSeriesList.push({
+                    name: maName,
+                    type: 'line',
+                    data: maVals,
+                    gridIndex: 0,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 1.5, color: color }
+                });
+            });
+        }
+
+        legendData.push('成交量');
+
         const option = {
             backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
                 axisPointer: { type: 'cross' }
             },
+            legend: {
+                data: legendData,
+                textStyle: { color: '#cbd5e1', fontSize: 11 },
+                top: 0,
+                right: 20
+            },
             grid: [
-                { left: '4%', right: '4%', top: '8%', height: '62%' },
-                { left: '4%', right: '4%', top: '76%', height: '18%' }
+                { left: '4%', right: '4%', top: '35px', height: '60%' },
+                { left: '4%', right: '4%', top: '74%', height: '18%' }
             ],
             xAxis: [
                 { type: 'category', data: dates, gridIndex: 0, scale: true },
@@ -3274,8 +3380,8 @@ function renderStockChart() {
                 }
             ],
             dataZoom: [
-                { type: 'inside', xAxisIndex: [0, 1], start: dates.length > 30 ? 30 : 0, end: 100 },
-                { type: 'slider', xAxisIndex: [0, 1], top: '96%', height: 16 }
+                { type: 'inside', xAxisIndex: [0, 1], start: dates.length > 60 ? Math.max(0, 100 - Math.round(60 / dates.length * 100)) : 0, end: 100 },
+                { type: 'slider', xAxisIndex: [0, 1], top: '95%', height: 16 }
             ],
             series: [
                 {
@@ -3290,6 +3396,7 @@ function renderStockChart() {
                         borderColor0: '#10b981'
                     }
                 },
+                ...maSeriesList,
                 {
                     name: '成交量',
                     type: 'bar',
@@ -4636,9 +4743,26 @@ function renderEtfKlineFlowChart(data) {
     const isAggregated = data.code === "ALL_BROAD";
     const bd = data.breakdown || null;
 
-    const ma5 = calculateMA(5, values);
-    const ma10 = calculateMA(10, values);
-    const ma20 = calculateMA(20, values);
+    // 动态计算自定义均线 (日线/周线/月线通用)
+    const maSeriesList = [];
+    const maNames = [];
+
+    if (etfMAConfig.enabled && etfMAConfig.periods && etfMAConfig.periods.length > 0) {
+        etfMAConfig.periods.forEach((p, idx) => {
+            const maVals = calculateMA(p, values);
+            const color = MA_COLOR_PALETTE[idx % MA_COLOR_PALETTE.length];
+            const maName = `MA${p}`;
+            maNames.push(maName);
+            maSeriesList.push({
+                name: maName,
+                type: 'line',
+                data: maVals,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { width: 1.5, color: color }
+            });
+        });
+    }
 
     // 提示框格式化
     const tooltipFormatter = function(params) {
@@ -4676,9 +4800,9 @@ function renderEtfKlineFlowChart(data) {
         return html;
     };
 
-    let legendData = ['基准K线', 'MA5', 'MA10', 'MA20', '宽基总净流入(亿元)', '累计总合力(亿元)'];
+    let legendData = ['基准K线', ...maNames, '宽基总净流入(亿元)', '累计总合力(亿元)'];
     if (isAggregated) {
-        legendData = ['基准K线', 'MA5', 'MA10', 'MA20', '宽基总净流入(亿元)', '累计总合力(亿元)', '上证50', '沪深300', '中证500', '中证1000', '中证2000', '科创', '创业板', '中证A500'];
+        legendData = ['基准K线', ...maNames, '宽基总净流入(亿元)', '累计总合力(亿元)', '上证50', '沪深300', '中证500', '中证1000', '中证2000', '科创', '创业板', '中证A500'];
     }
 
     const seriesList = [
@@ -4693,30 +4817,7 @@ function renderEtfKlineFlowChart(data) {
                 borderColor0: '#10b981'
             }
         },
-        {
-            name: 'MA5',
-            type: 'line',
-            data: ma5,
-            smooth: true,
-            showSymbol: false,
-            lineStyle: { width: 1.5, color: '#f59e0b' }
-        },
-        {
-            name: 'MA10',
-            type: 'line',
-            data: ma10,
-            smooth: true,
-            showSymbol: false,
-            lineStyle: { width: 1.5, color: '#38bdf8' }
-        },
-        {
-            name: 'MA20',
-            type: 'line',
-            data: ma20,
-            smooth: true,
-            showSymbol: false,
-            lineStyle: { width: 1.5, color: '#ec4899' }
-        },
+        ...maSeriesList,
         // 下层柱状图: 宽基总合主力净流入/净流出
         {
             name: '宽基总净流入(亿元)',
@@ -4796,12 +4897,20 @@ function renderEtfKlineFlowChart(data) {
         },
         legend: {
             data: legendData,
-            selected: isAggregated ? {
-                '基准K线': true, 'MA5': true, 'MA10': false, 'MA20': false,
-                '宽基总净流入(亿元)': true, '累计总合力(亿元)': true,
-                '上证50': false, '沪深300': false, '中证500': false,
-                '中证1000': false, '中证2000': false, '科创': false, '创业板': false, '中证A500': false
-            } : {},
+            selected: (function() {
+                const sel = {};
+                if (isAggregated) {
+                    sel['上证50'] = false;
+                    sel['沪深300'] = false;
+                    sel['中证500'] = false;
+                    sel['中证1000'] = false;
+                    sel['中证2000'] = false;
+                    sel['科创'] = false;
+                    sel['创业板'] = false;
+                    sel['中证A500'] = false;
+                }
+                return sel;
+            })(),
             textStyle: { color: '#cbd5e1', fontSize: 11 },
             top: 0,
             right: 15,
