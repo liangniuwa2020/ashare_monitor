@@ -110,23 +110,27 @@ function switchMainView(viewType) {
     const btnEtf = document.getElementById("nav-btn-etf");
     const btnGuorn = document.getElementById("nav-btn-guorn");
     const btnValuation = document.getElementById("nav-btn-valuation");
+    const btnPanic = document.getElementById("nav-btn-panic");
 
     const viewCockpit = document.getElementById("view-cockpit");
     const viewEtf = document.getElementById("view-etf");
     const viewGuorn = document.getElementById("view-guorn");
     const viewValuation = document.getElementById("view-valuation");
+    const viewPanic = document.getElementById("view-panic");
 
     // 重置所有导航按钮样式
     if (btnCockpit) btnCockpit.className = "chart-tab-btn";
     if (btnEtf) btnEtf.className = "chart-tab-btn";
     if (btnGuorn) btnGuorn.className = "chart-tab-btn";
     if (btnValuation) btnValuation.className = "chart-tab-btn";
+    if (btnPanic) btnPanic.className = "chart-tab-btn";
 
     // 隐藏所有视图
     if (viewCockpit) viewCockpit.style.display = "none";
     if (viewEtf) viewEtf.style.display = "none";
     if (viewGuorn) viewGuorn.style.display = "none";
     if (viewValuation) viewValuation.style.display = "none";
+    if (viewPanic) viewPanic.style.display = "none";
 
     if (viewType === "cockpit") {
         if (btnCockpit) btnCockpit.className = "primary-btn";
@@ -161,6 +165,13 @@ function switchMainView(viewType) {
         renderValuationComparison();
         setTimeout(() => {
             if (valuationChartInstance) valuationChartInstance.resize();
+        }, 80);
+    } else if (viewType === "panic") {
+        if (btnPanic) btnPanic.className = "primary-btn";
+        if (viewPanic) viewPanic.style.display = "flex";
+        loadPanicBoardData();
+        setTimeout(() => {
+            if (panicChartInstance) panicChartInstance.resize();
         }, 80);
     }
 }
@@ -5865,3 +5876,567 @@ function renderHuijinTotalTable(records) {
 
 
 
+
+
+/* ============================================================
+   全球恐慌数据板块：CBOE VIX 恐慌指数 & 五角大楼披萨指数
+   ============================================================ */
+
+let panicChartInstance = null;
+let panicBoardDataCache = null;
+let currentPanicZoomRange = "all";
+
+// 1. 加载恐慌数据板块全量数据
+async function loadPanicBoardData(forceRefresh = false) {
+    const chartDom = document.getElementById("panic-vix-pizza-chart");
+    if (!panicChartInstance && chartDom) {
+        chartDom.innerHTML = `<div class="loader" style="margin: 180px auto;"></div>`;
+    }
+
+    try {
+        const url = forceRefresh ? "/api/panic/data?force_refresh=true" : "/api/panic/data";
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.status !== "success") {
+            console.error("加载恐慌板块数据失败:", data.message);
+            if (chartDom) chartDom.innerHTML = `<div style="text-align:center; padding:100px; color:#ef4444;">❌ 数据加载失败: ${data.message || '请检查后端服务'}</div>`;
+            return;
+        }
+
+        panicBoardDataCache = data;
+
+        // 渲染顶部 4 大量化卡片
+        renderPanicSummary(data.summary);
+
+        // 渲染 34 年联动图表
+        renderPanicChart(data.timeline, data.milestones);
+
+        // 渲染重大危机全量对比档案表
+        renderPanicMilestonesTable(data.milestones);
+
+    } catch (err) {
+        console.error("请求恐慌板块数据接口异常:", err);
+        if (chartDom) chartDom.innerHTML = `<div style="text-align:center; padding:100px; color:#ef4444;">❌ 网络或服务异常，请稍后重试</div>`;
+    }
+}
+
+// 2. 渲染顶部 4 大核心恐慌与地缘指标卡片
+function renderPanicSummary(summary) {
+    if (!summary) return;
+
+    // VIX 卡片
+    const elVixVal = document.getElementById("metric-vix-val");
+    const elVixChg = document.getElementById("metric-vix-chg");
+    const elVixTag = document.getElementById("metric-vix-tag");
+    const elVixStatus = document.getElementById("metric-vix-status");
+    const elVixPeak = document.getElementById("metric-vix-peak");
+
+    if (elVixVal) elVixVal.innerText = summary.current_vix != null ? Number(summary.current_vix).toFixed(2) : "--";
+    if (elVixChg) {
+        const chg = summary.vix_change_amount || 0;
+        const pct = summary.vix_change_percent || 0;
+        const sign = chg > 0 ? "+" : "";
+        elVixChg.innerText = `${sign}${chg.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+        elVixChg.style.color = chg >= 0 ? "#ef4444" : "#10b981";
+    }
+    if (elVixTag) {
+        elVixTag.innerText = summary.current_vix >= 30 ? "⚡ 极度恐慌" : (summary.current_vix >= 20 ? "⚠️ 避险升温" : "🌿 市场平稳");
+        elVixTag.style.background = summary.current_vix >= 30 ? "rgba(239, 68, 68, 0.2)" : (summary.current_vix >= 20 ? "rgba(245, 158, 11, 0.2)" : "rgba(16, 185, 129, 0.2)");
+        elVixTag.style.color = summary.vix_color || "#38bdf8";
+    }
+    if (elVixStatus) {
+        elVixStatus.innerText = summary.vix_status || "--";
+        elVixStatus.style.color = summary.vix_color || "#38bdf8";
+    }
+    if (elVixPeak) elVixPeak.innerText = (summary.all_time_vix_high || 89.53).toFixed(2);
+
+    // 披萨指数卡片
+    const elPizzaVal = document.getElementById("metric-pizza-val");
+    const elPizzaDefcon = document.getElementById("metric-pizza-defcon");
+    const elPizzaTag = document.getElementById("metric-pizza-tag");
+    const elPizzaStatus = document.getElementById("metric-pizza-status");
+
+    if (elPizzaVal) elPizzaVal.innerText = summary.current_pizza != null ? Number(summary.current_pizza).toFixed(1) : "--";
+    if (elPizzaDefcon) {
+        const pz = summary.current_pizza || 20;
+        elPizzaDefcon.innerText = pz >= 85 ? "DEFCON 1 (战时)" : (pz >= 65 ? "DEFCON 3 (警戒)" : (pz >= 45 ? "DEFCON 4 (戒备)" : "DEFCON 5 (常态)"));
+        elPizzaDefcon.style.color = summary.pizza_color || "#fbbf24";
+    }
+    if (elPizzaTag) {
+        elPizzaTag.innerText = summary.current_pizza >= 65 ? "🚨 战情异动" : "🍕 平稳值守";
+        elPizzaTag.style.background = summary.current_pizza >= 65 ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)";
+        elPizzaTag.style.color = summary.pizza_color || "#fbbf24";
+    }
+    if (elPizzaStatus) {
+        elPizzaStatus.innerText = summary.pizza_status || "--";
+        elPizzaStatus.style.color = summary.pizza_color || "#fbbf24";
+    }
+
+    // 恐慌共振系数卡片
+    const elResVal = document.getElementById("metric-resonance-val");
+    const elResBar = document.getElementById("metric-resonance-bar");
+    if (elResVal) elResVal.innerText = summary.resonance_score != null ? Number(summary.resonance_score).toFixed(1) : "--";
+    if (elResBar) {
+        const barPct = Math.min(100, Math.max(5, summary.resonance_score || 0));
+        elResBar.style.width = `${barPct}%`;
+    }
+
+    // 全景时间轴跨度卡片
+    const elYears = document.getElementById("metric-timeline-years");
+    const elDays = document.getElementById("metric-total-days");
+    const elStart = document.getElementById("metric-start-date");
+    const elEnd = document.getElementById("metric-end-date");
+    if (elYears) elYears.innerText = "34+ 年";
+    if (elDays) elDays.innerText = (summary.total_records || 9299).toLocaleString();
+    if (elStart) elStart.innerText = summary.start_date || "1990-01-02";
+    if (elEnd) elEnd.innerText = summary.end_date || "2026-10-21";
+}
+
+// 3. 渲染 VIX vs 披萨指数 34 年全景双轴联动图表
+function renderPanicChart(timeline, milestones) {
+    if (!timeline || !timeline.length) return;
+    const chartDom = document.getElementById("panic-vix-pizza-chart");
+    if (!chartDom) return;
+
+    if (!panicChartInstance) {
+        panicChartInstance = echarts.init(chartDom);
+        window.addEventListener("resize", () => {
+            if (panicChartInstance) panicChartInstance.resize();
+        });
+
+        // 监听图表点击事件（点击 MarkPoint 或数据点弹出全息档案）
+        panicChartInstance.on("click", function(params) {
+            if (params.componentType === "markPoint") {
+                const dateClicked = params.data.coord ? params.data.coord[0] : null;
+                if (dateClicked && panicBoardDataCache && panicBoardDataCache.milestones) {
+                    const found = panicBoardDataCache.milestones.find(m => m.date === dateClicked);
+                    if (found) showCrisisDossier(found);
+                }
+            } else if (params.componentType === "series") {
+                const dateClicked = params.name;
+                if (dateClicked && panicBoardDataCache && panicBoardDataCache.milestones) {
+                    const found = panicBoardDataCache.milestones.find(m => m.date === dateClicked);
+                    if (found) showCrisisDossier(found);
+                }
+            }
+        });
+    }
+
+    const dates = timeline.map(d => d.date);
+    const vixData = timeline.map(d => d.vix_close);
+    const pizzaData = timeline.map(d => d.pizza_index);
+
+    // 建立地缘危机 MarkPoint 标记点
+    const markPointData = [];
+    if (milestones && milestones.length) {
+        milestones.forEach(m => {
+            const shortTitle = m.title.replace(/^\d{4}\s*/, "");
+            markPointData.push({
+                name: m.title,
+                coord: [m.date, m.pizza_index],
+                value: m.defcon,
+                itemStyle: {
+                    color: m.pizza_index >= 85 ? "#ef4444" : (m.pizza_index >= 65 ? "#f97316" : "#f59e0b")
+                },
+                symbol: "pin",
+                symbolSize: m.pizza_index >= 85 ? 40 : 32,
+                label: {
+                    show: true,
+                    formatter: shortTitle,
+                    position: "top",
+                    color: "#fde68a",
+                    fontSize: 10,
+                    fontWeight: "bold",
+                    backgroundColor: "rgba(15, 23, 42, 0.85)",
+                    borderColor: "#f59e0b",
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    padding: [3, 6]
+                }
+            });
+        });
+    }
+
+    // 设定全量时序图表配置
+    const option = {
+        backgroundColor: "transparent",
+        animation: true,
+        animationDuration: 1200,
+        tooltip: {
+            trigger: "axis",
+            backgroundColor: "rgba(15, 23, 42, 0.95)",
+            borderColor: "#334155",
+            borderWidth: 1,
+            textStyle: { color: "#f8fafc", fontSize: 12 },
+            axisPointer: {
+                type: "cross",
+                crossStyle: { color: "#94a3b8" },
+                lineStyle: { type: "dashed", color: "#64748b" }
+            },
+            formatter: function(params) {
+                if (!params || !params.length) return "";
+                const dateStr = params[0].axisValue;
+                
+                // 检查是否恰好命中重大危机
+                let crisisHtml = "";
+                if (panicBoardDataCache && panicBoardDataCache.milestones) {
+                    const matched = panicBoardDataCache.milestones.find(m => m.date === dateStr);
+                    if (matched) {
+                        crisisHtml = `
+                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #475569; background:rgba(239,68,68,0.12); padding:6px 8px; border-radius:4px;">
+                                <div style="color:#f87171; font-weight:800; font-size:12px;">🚨 ${matched.title} (${matched.action_code || '危机行动'})</div>
+                                <div style="color:#cbd5e1; font-size:11px; margin-top:3px; line-height:1.4;">${matched.description}</div>
+                                <div style="color:#38bdf8; font-size:11px; margin-top:3px;">📈 市场冲击: ${matched.market_impact}</div>
+                            </div>
+                        `;
+                    }
+                }
+
+                let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:6px; font-size:13px;">📅 日期: ${dateStr}</div>`;
+                params.forEach(p => {
+                    const color = p.color;
+                    const val = p.value != null ? Number(p.value).toFixed(2) : "--";
+                    const isVix = p.seriesName.includes("VIX");
+                    const icon = isVix ? "📊" : "🍕";
+                    const extra = isVix 
+                        ? (p.value >= 40 ? " <b style='color:#ef4444;'>(极度恐慌)</b>" : (p.value >= 20 ? " <span style='color:#eab308;'>(警戒)</span>" : " <span style='color:#10b981;'>(平稳)</span>"))
+                        : (p.value >= 65 ? " <b style='color:#ef4444;'>(DEFCON 3/1 警戒)</b>" : " <span style='color:#10b981;'>(常态)</span>");
+                    html += `
+                        <div style="display:flex; justify-content:space-between; gap:16px; margin:3px 0;">
+                            <span>${icon} <span style="color:${color}; font-weight:600;">${p.seriesName}</span>:</span>
+                            <span><b>${val}</b> ${extra}</span>
+                        </div>
+                    `;
+                });
+
+                html += crisisHtml;
+                return html;
+            }
+        },
+        legend: {
+            data: ["CBOE VIX 恐慌指数", "五角大楼披萨指数 (Pizza Meter)"],
+            top: 0,
+            right: 20,
+            textStyle: { color: "#cbd5e1", fontSize: 12 },
+            itemGap: 18
+        },
+        grid: {
+            top: 45,
+            left: 55,
+            right: 55,
+            bottom: 70
+        },
+        xAxis: {
+            type: "category",
+            data: dates,
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: "#334155" } },
+            axisLabel: { color: "#94a3b8", fontSize: 11 },
+            splitLine: { show: false }
+        },
+        yAxis: [
+            {
+                type: "value",
+                name: "VIX 恐慌指数",
+                nameTextStyle: { color: "#38bdf8", fontSize: 12, padding: [0, 0, 0, 10] },
+                min: 0,
+                max: 95,
+                interval: 20,
+                axisLabel: { color: "#38bdf8", formatter: "{value}" },
+                axisLine: { show: true, lineStyle: { color: "#0284c7" } },
+                splitLine: { lineStyle: { color: "rgba(51, 65, 85, 0.4)", type: "dashed" } }
+            },
+            {
+                type: "value",
+                name: "披萨指数 (0-100)",
+                nameTextStyle: { color: "#f59e0b", fontSize: 12, padding: [0, 10, 0, 0] },
+                min: 0,
+                max: 105,
+                interval: 20,
+                position: "right",
+                axisLabel: { color: "#f59e0b", formatter: "{value}" },
+                axisLine: { show: true, lineStyle: { color: "#d97706" } },
+                splitLine: { show: false }
+            }
+        ],
+        dataZoom: [
+            {
+                type: "inside",
+                xAxisIndex: 0,
+                start: 0,
+                end: 100
+            },
+            {
+                type: "slider",
+                xAxisIndex: 0,
+                bottom: 12,
+                height: 24,
+                borderColor: "#334155",
+                backgroundColor: "#0f172a",
+                fillerColor: "rgba(56, 189, 248, 0.15)",
+                handleStyle: { color: "#38bdf8", borderColor: "#0284c7" },
+                textStyle: { color: "#94a3b8", fontSize: 10 },
+                start: 0,
+                end: 100
+            }
+        ],
+        series: [
+            {
+                name: "CBOE VIX 恐慌指数",
+                type: "line",
+                yAxisIndex: 0,
+                data: vixData,
+                smooth: true,
+                showSymbol: false,
+                sampling: "lttb",
+                lineStyle: { width: 1.8, color: "#38bdf8" },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: "rgba(56, 189, 248, 0.35)" },
+                        { offset: 1, color: "rgba(56, 189, 248, 0.0)" }
+                    ])
+                },
+                markLine: {
+                    silent: true,
+                    symbol: "none",
+                    data: [
+                        { yAxis: 20, lineStyle: { color: "#eab308", type: "dashed", width: 1 }, label: { formatter: "警惕线 20", position: "insideEndTop", color: "#eab308", fontSize: 10 } },
+                        { yAxis: 30, lineStyle: { color: "#f97316", type: "dashed", width: 1 }, label: { formatter: "恐慌线 30", position: "insideEndTop", color: "#f97316", fontSize: 10 } },
+                        { yAxis: 40, lineStyle: { color: "#ef4444", type: "dashed", width: 1.5 }, label: { formatter: "极度恐慌 40", position: "insideEndTop", color: "#ef4444", fontSize: 10 } }
+                    ]
+                }
+            },
+            {
+                name: "五角大楼披萨指数 (Pizza Meter)",
+                type: "line",
+                yAxisIndex: 1,
+                data: pizzaData,
+                smooth: true,
+                showSymbol: false,
+                sampling: "lttb",
+                lineStyle: { width: 2.2, color: "#f59e0b" },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: "rgba(245, 158, 11, 0.35)" },
+                        { offset: 1, color: "rgba(245, 158, 11, 0.0)" }
+                    ])
+                },
+                markPoint: {
+                    data: markPointData
+                }
+            }
+        ]
+    };
+
+    panicChartInstance.setOption(option, true);
+}
+
+// 4. 时间跨度快捷区间切换 (近1月, 近6月, 近1年, 近3年, 近5年, 近10年, 近20年, 全历史)
+function zoomPanicTimeline(range) {
+    currentPanicZoomRange = range;
+    if (!panicChartInstance || !panicBoardDataCache || !panicBoardDataCache.timeline) return;
+
+    // 切换按钮高亮
+    document.querySelectorAll("#view-panic .chart-tab-btn").forEach(b => {
+        if (b.innerText.includes("近") || b.innerText.includes("全历史")) {
+            b.classList.remove("active");
+        }
+    });
+    if (event && event.target && event.target.classList) {
+        event.target.classList.add("active");
+    }
+
+    const total = panicBoardDataCache.timeline.length;
+    let daysToInclude = total;
+
+    // 估算对应交易日数量 (一年按 252 交易日计算)
+    switch (range) {
+        case "1m": daysToInclude = 22; break;
+        case "6m": daysToInclude = 126; break;
+        case "1y": daysToInclude = 252; break;
+        case "3y": daysToInclude = 756; break;
+        case "5y": daysToInclude = 1260; break;
+        case "10y": daysToInclude = 2520; break;
+        case "20y": daysToInclude = 5040; break;
+        case "all":
+        default:
+            daysToInclude = total;
+            break;
+    }
+
+    const startPct = Math.max(0, Math.round(((total - daysToInclude) / total) * 100));
+
+    panicChartInstance.dispatchAction({
+        type: "dataZoom",
+        start: startPct,
+        end: 100
+    });
+}
+
+// 5. 地缘军情重大历史危机直达定位
+function focusCrisisMilestone(dateStr) {
+    if (!panicChartInstance || !panicBoardDataCache || !panicBoardDataCache.timeline) return;
+
+    const timeline = panicBoardDataCache.timeline;
+    const total = timeline.length;
+    let idx = timeline.findIndex(d => d.date === dateStr);
+
+    if (idx === -1) {
+        // 如果非交易日（周末爆发），寻找最接近的交易日
+        const targetTime = new Date(dateStr).getTime();
+        let closestDiff = Infinity;
+        timeline.forEach((d, i) => {
+            const diff = Math.abs(new Date(d.date).getTime() - targetTime);
+            if (diff < closestDiff) {
+                closestDiff = diff;
+                idx = i;
+            }
+        });
+    }
+
+    if (idx !== -1) {
+        // 以危机发生日为中心，展开前后各 45 个交易日窗口 (约3个月)
+        const halfWindow = 45;
+        const startIdx = Math.max(0, idx - halfWindow);
+        const endIdx = Math.min(total - 1, idx + halfWindow);
+
+        const startPct = Math.round((startIdx / total) * 100);
+        const endPct = Math.round((endIdx / total) * 100);
+
+        panicChartInstance.dispatchAction({
+            type: "dataZoom",
+            start: startPct,
+            end: endPct
+        });
+
+        // 查找对应危机事件并展示全息档案卡
+        if (panicBoardDataCache.milestones) {
+            const matched = panicBoardDataCache.milestones.find(m => m.date === dateStr);
+            if (matched) {
+                showCrisisDossier(matched);
+            }
+        }
+    }
+}
+
+// 6. 展示选中地缘危机深度全息档案卡
+function showCrisisDossier(ev) {
+    if (!ev) return;
+    const card = document.getElementById("panic-event-dossier");
+    if (!card) return;
+
+    const titleEl = document.getElementById("dossier-title");
+    const dateEl = document.getElementById("dossier-date");
+    const defconEl = document.getElementById("dossier-defcon");
+    const descEl = document.getElementById("dossier-desc");
+    const pizzaEl = document.getElementById("dossier-pizza");
+    const alertEl = document.getElementById("dossier-alert");
+    const vixEl = document.getElementById("dossier-vix");
+    const impactEl = document.getElementById("dossier-impact");
+
+    if (titleEl) titleEl.innerText = `${ev.title} ${ev.action_code ? `(${ev.action_code})` : ''}`;
+    if (dateEl) dateEl.innerText = ev.date;
+    if (defconEl) {
+        defconEl.innerText = `${ev.defcon || 'DEFCON'} · ${ev.alert_level || ''}`;
+        defconEl.style.background = ev.pizza_index >= 85 ? "rgba(239, 68, 68, 0.25)" : "rgba(245, 158, 11, 0.25)";
+        defconEl.style.color = ev.pizza_index >= 85 ? "#f87171" : "#fbbf24";
+    }
+    if (descEl) descEl.innerText = ev.description || "--";
+    if (pizzaEl) pizzaEl.innerText = `${ev.pizza_index} 分`;
+    if (alertEl) alertEl.innerText = `战备级别: ${ev.alert_level} (${ev.defcon})`;
+    if (vixEl) vixEl.innerText = `${ev.vix_peak} 点`;
+    if (impactEl) impactEl.innerText = ev.market_impact || "--";
+
+    card.style.display = "block";
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// 7. 渲染历次重大地缘危机与恐慌指数对比全量时序档案表
+function renderPanicMilestonesTable(milestones) {
+    const tbody = document.getElementById("panic-milestones-table-tbody");
+    if (!tbody) return;
+
+    if (!milestones || !milestones.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#94a3b8;">暂无重大危机档案数据</td></tr>`;
+        return;
+    }
+
+    let html = "";
+    milestones.forEach((m, idx) => {
+        const isSevere = m.pizza_index >= 85;
+        const pizzaBadgeColor = isSevere ? "#ef4444" : (m.pizza_index >= 65 ? "#f97316" : "#fbbf24");
+        const vixBadgeColor = m.vix_peak >= 40 ? "#ef4444" : (m.vix_peak >= 25 ? "#f97316" : "#38bdf8");
+
+        html += `
+            <tr style="border-bottom: 1px solid #1e293b; cursor: pointer; transition: background 0.2s;" 
+                onmouseover="this.style.background='rgba(56, 189, 248, 0.08)'" 
+                onmouseout="this.style.background='transparent'"
+                onclick="focusCrisisMilestone('${m.date}')">
+                <td style="padding: 10px; font-family: monospace; color: #94a3b8;">${m.date}</td>
+                <td style="padding: 10px; font-weight: 700; color: #f8fafc;">
+                    <span style="color: ${pizzaBadgeColor}; margin-right: 5px;">●</span>${m.title}
+                </td>
+                <td style="padding: 10px;">
+                    <span class="tag" style="background: rgba(100, 116, 139, 0.2); color: #cbd5e1; font-size: 11px;">
+                        ${m.action_code || '地缘军政'}
+                    </span>
+                </td>
+                <td style="padding: 10px; font-family: monospace; font-weight: 800; color: ${pizzaBadgeColor};">
+                    ${m.pizza_index} 分
+                </td>
+                <td style="padding: 10px; font-family: monospace; font-weight: 800; color: ${vixBadgeColor};">
+                    ${m.vix_peak} 点
+                </td>
+                <td style="padding: 10px;">
+                    <span class="tag" style="background: ${isSevere ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}; color: ${pizzaBadgeColor}; font-weight: bold; font-size: 11px;">
+                        ${m.defcon} · ${m.alert_level}
+                    </span>
+                </td>
+                <td style="padding: 10px; font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+                    <div>${m.description}</div>
+                    <div style="color: #38bdf8; font-size: 11.5px; margin-top: 3px;">📊 <b>市场反应</b>: ${m.market_impact}</div>
+                </td>
+                <td style="padding: 10px; text-align: center;">
+                    <button class="chart-tab-btn" onclick="event.stopPropagation(); focusCrisisMilestone('${m.date}')" style="font-size: 11px; padding: 3px 8px; border-radius: 4px;">
+                        🎯 定位
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+// 8. 手动触发从 CBOE 官方拉取全量 9300+ 历史数据
+async function syncCboeData() {
+    if (!confirm("确定要向芝加哥期权交易所 (CBOE) 官方拉取自 1990 年至今全量 9300+ 交易日历史数据吗？\n该过程可能需要 3~5 秒。")) {
+        return;
+    }
+
+    const btn = event ? event.target : null;
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "⏳ 正在同步 CBOE...";
+        }
+
+        const res = await fetch("/api/panic/sync", { method: "POST" });
+        const json = await res.json();
+
+        if (json.status === "success") {
+            alert(`✅ CBOE 历史数据同步成功！共载入 ${json.count || 0} 条历史记录。`);
+            loadPanicBoardData(true);
+        } else {
+            alert(`⚠️ 同步返回: ${json.message || '未知状态'}`);
+        }
+    } catch (err) {
+        alert("❌ 同步请求失败，请检查网络或后端日志");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "📡 同步 CBOE 全历史";
+        }
+    }
+}

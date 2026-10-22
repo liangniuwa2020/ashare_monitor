@@ -29,6 +29,9 @@
                 <button class="chart-tab-btn" id="nav-btn-etf" onclick="switchMainView('etf')">💰 宽基ETF与证金汇金持仓</button>
                 <button class="chart-tab-btn" id="nav-btn-guorn" onclick="switchMainView('guorn')">🧭 果仁市场风向标与情绪择时</button>
                 <button class="chart-tab-btn" id="nav-btn-valuation" onclick="switchMainView('valuation')">📈 板块历史PB/PE多板块对比</button>
+                <button class="chart-tab-btn" id="nav-btn-panic" onclick="switchMainView('panic')" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(249, 115, 22, 0.25) 100%); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+                    ⚡ 恐慌与披萨指数
+                </button>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #94a3b8">
                 <span class="pulse-dot"></span>
@@ -1237,6 +1240,243 @@
                     <button class="chart-tab-btn" id="btn-hj-prev-page" onclick="changeHuijinPage(-1)" disabled>◀ 上一页</button>
                     <span id="huijin-page-indicator" style="color:#e2e8f0; font-weight:600; padding:0 6px;">第 1 页</span>
                     <button class="chart-tab-btn" id="btn-hj-next-page" onclick="changeHuijinPage(1)">下一页 ▶</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. 恐慌数据板块：VIX 恐慌指数与五角大楼披萨指数全景看板 -->
+    <div class="container" id="view-panic" style="display: none; flex-direction: column; gap: 20px; padding: 20px 28px;">
+        <!-- 板块顶部标题与功能说明 -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+            <div>
+                <h1 style="font-size: 24px; font-weight: 800; color: #f8fafc; margin-bottom: 6px; display: flex; align-items: center; gap: 10px;">
+                    <span style="background: linear-gradient(135deg, #ef4444 0%, #f97316 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ 全球恐慌数据板块</span>
+                    <span style="font-size: 13px; font-weight: 600; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 10px; border-radius: 20px;">
+                        CBOE VIX 恐慌指数 & 五角大楼披萨指数 (Pizza Meter)
+                    </span>
+                </h1>
+                <div style="font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                    全景贯通自 <b>1990 年 1 月 2 日</b> 至今超 <b>34 年（9,300+ 连续交易日）</b> 官方金融恐慌指数与五角大楼地缘军情外卖指数，时间轴无限拉伸至极远端，全景复盘历次地缘战争与金融危机。
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="primary-btn" onclick="loadPanicBoardData(true)" style="background: #2563eb; border: 1px solid #3b82f6; padding: 6px 14px; font-size: 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                    🔄 刷新实时数据
+                </button>
+                <button class="chart-tab-btn" onclick="syncCboeData()" style="padding: 6px 14px; font-size: 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;" title="向 CBOE 官方拉取最新全量 9300+ 历史数据">
+                    📡 同步 CBOE 全历史
+                </button>
+            </div>
+        </div>
+
+        <!-- 顶部 4 大核心恐慌量化卡片 -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;" id="panic-metrics-summary">
+            <!-- 1. VIX 恐慌指数卡片 -->
+            <div class="stat-metric-card" style="background: linear-gradient(145deg, #131c31 0%, #172440 100%); border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; border-radius: 10px; padding: 16px 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">CBOE VIX 恐慌指数</span>
+                    <span class="tag" id="metric-vix-tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">加载中</span>
+                </div>
+                <div style="display: flex; align-items: baseline; gap: 10px;">
+                    <span style="font-size: 30px; font-weight: 800; color: #38bdf8; font-family: monospace;" id="metric-vix-val">--</span>
+                    <span style="font-size: 13px; font-weight: 700;" id="metric-vix-chg">--</span>
+                </div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between;">
+                    <span>当前状态: <b style="color: #f1f5f9;" id="metric-vix-status">--</b></span>
+                    <span>历史极高: <b style="color: #ef4444;" id="metric-vix-peak">89.53</b></span>
+                </div>
+            </div>
+
+            <!-- 2. 五角大楼披萨指数卡片 -->
+            <div class="stat-metric-card" style="background: linear-gradient(145deg, #1e1b2e 0%, #291834 100%); border: 1px solid #701a75; border-left: 4px solid #f97316; border-radius: 10px; padding: 16px 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 12px; color: #cbd5e1; font-weight: 600;">五角大楼披萨指数 (Pizza Meter)</span>
+                    <span class="tag" id="metric-pizza-tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">加载中</span>
+                </div>
+                <div style="display: flex; align-items: baseline; gap: 10px;">
+                    <span style="font-size: 30px; font-weight: 800; color: #fbbf24; font-family: monospace;" id="metric-pizza-val">--</span>
+                    <span style="font-size: 12px; color: #cbd5e1;" id="metric-pizza-defcon">DEFCON 5</span>
+                </div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between;">
+                    <span>外卖活跃度: <b style="color: #fbbf24;" id="metric-pizza-status">--</b></span>
+                    <span>历史极高: <b style="color: #ef4444;">100.0 (9·11)</b></span>
+                </div>
+            </div>
+
+            <!-- 3. 恐慌共振系数卡片 -->
+            <div class="stat-metric-card" style="background: linear-gradient(145deg, #181c2b 0%, #1c233a 100%); border: 1px solid #334155; border-left: 4px solid #a855f7; border-radius: 10px; padding: 16px 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 12px; color: #cbd5e1; font-weight: 600;">恐慌共振系数 (Crisis Resonance)</span>
+                    <span style="font-size: 11px; color: #a855f7; font-weight: 600;">资本波动 × 地缘军情</span>
+                </div>
+                <div style="display: flex; align-items: baseline; gap: 10px;">
+                    <span style="font-size: 30px; font-weight: 800; color: #c084fc; font-family: monospace;" id="metric-resonance-val">--</span>
+                    <span style="font-size: 12px; color: #94a3b8;">/ 100 综合分</span>
+                </div>
+                <div style="margin-top: 6px;">
+                    <div style="width: 100%; height: 5px; background: #334155; border-radius: 3px; overflow: hidden;">
+                        <div id="metric-resonance-bar" style="width: 25%; height: 100%; background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444); border-radius: 3px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. 全景时间轴跨度卡片 -->
+            <div class="stat-metric-card" style="background: linear-gradient(145deg, #152238 0%, #1a2a46 100%); border: 1px solid #1e3a8a; border-left: 4px solid #10b981; border-radius: 10px; padding: 16px 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">全景历史跨度 (Timeline Span)</span>
+                    <span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">极限全时序</span>
+                </div>
+                <div style="display: flex; align-items: baseline; gap: 6px;">
+                    <span style="font-size: 26px; font-weight: 800; color: #34d399; font-family: monospace;" id="metric-timeline-years">34+ 年</span>
+                    <span style="font-size: 13px; color: #94a3b8;">(<span id="metric-total-days">9,299</span> 个连续日)</span>
+                </div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between;">
+                    <span>起始: <b style="color: #e2e8f0;" id="metric-start-date">1990-01-02</b></span>
+                    <span>至今: <b style="color: #38bdf8;" id="metric-end-date">2026-10-21</b></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 核心图表卡片：VIX vs 披萨指数 34 年联动全景走势图 -->
+        <div style="background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; border-bottom: 1px solid #1e293b; padding-bottom: 12px;">
+                <div>
+                    <h3 style="font-size: 17px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
+                        <span>📈 VIX 恐慌指数 vs 五角大楼披萨指数 34 年全景联动走势图</span>
+                        <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">(双 Y 轴联动 · 底部全景时间轴缩放条 · 历次地缘危机事件标示)</span>
+                    </h3>
+                </div>
+
+                <!-- 时间跨度快捷切换控制器 -->
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                    <span style="font-size: 12px; color: #94a3b8; margin-right: 4px;">⏱️ 快捷区间:</span>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('1m')">近1月</button>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('6m')">近6月</button>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('1y')">近1年</button>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('3y')">近3年</button>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('5y')">近5年</button>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('10y')">近10年</button>
+                    <button class="chart-tab-btn" onclick="zoomPanicTimeline('20y')">近20年</button>
+                    <button class="chart-tab-btn active" id="btn-panic-zoom-all" onclick="zoomPanicTimeline('all')">全历史 (34+年)</button>
+                </div>
+            </div>
+
+            <!-- 地缘军情重大历史危机直达定位按钮组 -->
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; background: rgba(15, 23, 42, 0.7); padding: 8px 12px; border-radius: 8px; border: 1px solid #1e293b;">
+                <span style="font-size: 12px; color: #f59e0b; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                    🎯 重大危机速查:
+                </span>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('1990-08-02')" style="font-size: 11px; padding: 2px 8px;">1990 海湾危机</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('1991-01-16')" style="font-size: 11px; padding: 2px 8px;">1991 沙漠风暴</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('1998-12-16')" style="font-size: 11px; padding: 2px 8px;">1998 沙漠之狐</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2001-09-11')" style="font-size: 11px; padding: 2px 8px;">2001 9·11 事件</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2003-03-19')" style="font-size: 11px; padding: 2px 8px;">2003 伊拉克战争</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2008-10-10')" style="font-size: 11px; padding: 2px 8px;">2008 次贷危机</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2011-05-01')" style="font-size: 11px; padding: 2px 8px;">2011 击毙拉登</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2014-03-01')" style="font-size: 11px; padding: 2px 8px;">2014 克里米亚</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2020-01-03')" style="font-size: 11px; padding: 2px 8px;">2020 斩首苏莱曼尼</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2020-03-16')" style="font-size: 11px; padding: 2px 8px;">2020 疫情熔断潮</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2022-02-24')" style="font-size: 11px; padding: 2px 8px;">2022 俄乌冲突</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2023-10-07')" style="font-size: 11px; padding: 2px 8px;">2023 新巴以冲突</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2024-04-13')" style="font-size: 11px; padding: 2px 8px;">2024 伊朗突袭以色列</button>
+                <button class="chart-tab-btn" onclick="focusCrisisMilestone('2024-10-01')" style="font-size: 11px; padding: 2px 8px;">2024 弹道导弹饱和打击</button>
+            </div>
+
+            <!-- ECharts 主图表容器 -->
+            <div id="panic-vix-pizza-chart" style="width: 100%; height: 530px;">
+                <div class="loader" style="margin: 180px auto;"></div>
+            </div>
+        </div>
+
+        <!-- 选中地缘危机深度全息档案卡 (点击图表事件节点或表格时弹出展示) -->
+        <div id="panic-event-dossier" style="display: none; background: #0f172a; border: 1px solid #334155; border-left: 5px solid #f97316; border-radius: 10px; padding: 18px 22px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 18px;">🎖️</span>
+                    <h4 id="dossier-title" style="font-size: 17px; font-weight: 800; color: #f8fafc; margin: 0;">--</h4>
+                    <span id="dossier-date" style="font-family: monospace; color: #38bdf8; font-weight: 700; background: rgba(56, 189, 248, 0.15); padding: 2px 8px; border-radius: 4px; font-size: 12px;">--</span>
+                    <span id="dossier-defcon" class="tag" style="background: rgba(239, 68, 68, 0.2); color: #f87171; font-weight: bold;">--</span>
+                </div>
+                <button onclick="document.getElementById('panic-event-dossier').style.display='none'" style="background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer;">✕ 关闭档案</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; margin-top: 10px;">
+                <div style="background: #1e293b; border-radius: 8px; padding: 12px 16px;">
+                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px; font-weight: 700;">📡 地缘事件与五角大楼外卖异动情报:</div>
+                    <div id="dossier-desc" style="font-size: 13px; color: #e2e8f0; line-height: 1.6;">--</div>
+                </div>
+                <div style="background: #1e293b; border-radius: 8px; padding: 12px 16px;">
+                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px; font-weight: 700;">🍕 披萨指数峰值 & 战备状态:</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #fbbf24; font-family: monospace;" id="dossier-pizza">--</div>
+                    <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;" id="dossier-alert">--</div>
+                </div>
+                <div style="background: #1e293b; border-radius: 8px; padding: 12px 16px;">
+                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px; font-weight: 700;">📈 VIX 恐慌指数峰值 & 资本市场反应:</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #38bdf8; font-family: monospace;" id="dossier-vix">--</div>
+                    <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;" id="dossier-impact">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历次重大地缘危机与恐慌指数对比全量时序档案表 -->
+        <div style="background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h3 style="font-size: 16px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
+                    <span>📜 历次重大地缘军情与金融恐慌双指标复盘档案表 (1989 - 2026)</span>
+                </h3>
+                <span style="font-size: 12px; color: #94a3b8;">* 点击表格任意一行，图表即可自动对齐到对应历史时刻</span>
+            </div>
+
+            <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #334155; text-align: left; font-size: 12px; color: #94a3b8;">
+                            <th style="padding: 10px;">发生日期</th>
+                            <th style="padding: 10px;">历史重大地缘军政事件</th>
+                            <th style="padding: 10px;">行动代号 / 属性</th>
+                            <th style="padding: 10px;">🍕 披萨指数峰值</th>
+                            <th style="padding: 10px;">📊 VIX 恐慌峰值</th>
+                            <th style="padding: 10px;">战备 / 警戒级别</th>
+                            <th style="padding: 10px; width: 35%;">五角大楼情报说明 & 资本市场反应</th>
+                            <th style="padding: 10px; text-align: center;">图表定位</th>
+                        </tr>
+                    </thead>
+                    <tbody id="panic-milestones-table-tbody" style="font-size: 13px;">
+                        <tr><td colspan="8" style="text-align: center; padding: 30px; color: #94a3b8;">正在加载历史危机档案...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 底层指数理论与 OSINT 情报知识库 -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div style="background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 18px 22px;">
+                <h4 style="font-size: 15px; font-weight: 700; color: #38bdf8; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                    <span>📊 什么是 CBOE VIX 恐慌指数？</span>
+                </h4>
+                <div style="font-size: 12.5px; color: #94a3b8; line-height: 1.7;">
+                    <b>VIX（CBOE Volatility Index）</b>是由芝加哥期权交易所（CBOE）于 1990 年创立的标普500指数未来30天隐含波动率指数。它代表了华尔街机构投资者对未来一个月市场剧烈波动的预期。
+                    <ul style="margin: 6px 0 0 18px; padding: 0;">
+                        <li><b>VIX &lt; 15</b>: 市场极端平稳或贪婪自满，看跌期权保护成本极低。</li>
+                        <li><b>15 ≤ VIX &lt; 20</b>: 历史健康常态波动区间。</li>
+                        <li><b>20 ≤ VIX &lt; 30</b>: 市场焦虑情绪升温，避险情绪启动。</li>
+                        <li><b>VIX &gt; 30</b>: 进入高度恐慌与大盘回撤区（如战争爆发、加息恐慌）。</li>
+                        <li><b>VIX &gt; 40</b>: 世纪级系统性危机（如 1998 长期资本倒闭、2008 雷曼破产 89.53、2020 疫情熔断 82.69）。</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div style="background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 18px 22px;">
+                <h4 style="font-size: 15px; font-weight: 700; color: #fbbf24; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                    <span>🍕 什么是五角大楼披萨指数 (Pizza Meter)？</span>
+                </h4>
+                <div style="font-size: 12.5px; color: #94a3b8; line-height: 1.7;">
+                    <b>披萨指数（Pizza Meter）</b>是冷战与海湾战争期间由华盛顿达美乐特许经营老板弗兰克·米克斯（Frank Meeks）首次发现的著名地缘情报指标。
+                    <ul style="margin: 6px 0 0 18px; padding: 0;">
+                        <li><b>军情底层逻辑</b>：重大突发军事行动或国际危机前夕，五角大楼国家军事指挥中心（NMCC）、白宫战情室及 CIA 高级参谋官员会被紧急召集通宵开会且不得离开发布防线。</li>
+                        <li><b>外卖激增表征</b>：五角大楼周边（阿灵顿与华盛顿特区）的披萨订单会在<b>深夜 22:00 至凌晨 04:00</b> 激增 5~10 倍。</li>
+                        <li><b>现代 OSINT 开源情报应用</b>：2024 年伊朗空袭以色列期间，全球开源情报雷达通过 Google Maps / 地图实时客流再次提前数小时捕获五角大楼周边快餐店人流异常暴增，成为现代地缘风险前瞻的核心风向标。</li>
+                    </ul>
                 </div>
             </div>
         </div>

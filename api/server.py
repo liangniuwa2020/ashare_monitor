@@ -1362,6 +1362,27 @@ def get_huijin_total(refresh: bool = Query(False)):
 
 
 
+from core.panic_analyzer import get_panic_board_data, sync_vix_history_from_cboe
+
+# 18. 恐慌数据板块：VIX 恐慌指数与五角大楼披萨指数全时序数据接口
+@app.get("/api/panic/data")
+def get_panic_data():
+    try:
+        data = get_panic_board_data()
+        return data
+    except Exception as e:
+        logger.error(f"Error getting panic board data: {e}")
+        return {"status": "error", "message": str(e), "timeline": [], "milestones": []}
+
+@app.post("/api/panic/sync")
+def sync_panic_data():
+    try:
+        res = sync_vix_history_from_cboe()
+        return res
+    except Exception as e:
+        logger.error(f"Error syncing CBOE VIX data: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/favicon.ico")
 def favicon():
     fav_file = os.path.join(web_dir, "favicon.svg")
