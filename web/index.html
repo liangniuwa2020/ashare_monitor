@@ -1272,10 +1272,12 @@
 
         <!-- 顶部 4 大核心恐慌量化卡片 -->
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;" id="panic-metrics-summary">
-            <!-- 1. VIX 恐慌指数卡片 -->
-            <div class="stat-metric-card" style="background: linear-gradient(145deg, #131c31 0%, #172440 100%); border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; border-radius: 10px; padding: 16px 18px;">
+            <!-- 1. VIX 恐慌指数卡片 (支持单点立即切换展示独立K线图) -->
+            <div class="stat-metric-card" onclick="switchPanicChartMode('vix')" style="background: linear-gradient(145deg, #131c31 0%, #172440 100%); border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; border-radius: 10px; padding: 16px 18px; cursor: pointer; transition: all 0.25s ease;" title="点击切换并查看 CBOE VIX 恐慌指数专业K线图" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(56, 189, 248, 0.25)';" onmouseout="this.style.transform='none'; this.style.boxShadow='none';">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">CBOE VIX 恐慌指数</span>
+                    <span style="font-size: 12px; color: #94a3b8; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                        <span>📉</span> CBOE VIX 恐慌指数 <span style="font-size: 10px; color: #38bdf8; background: rgba(56, 189, 248, 0.15); padding: 1px 5px; border-radius: 4px;">(点击看图)</span>
+                    </span>
                     <span class="tag" id="metric-vix-tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">加载中</span>
                 </div>
                 <div style="display: flex; align-items: baseline; gap: 10px;">
@@ -1288,10 +1290,12 @@
                 </div>
             </div>
 
-            <!-- 2. 五角大楼披萨指数卡片 -->
-            <div class="stat-metric-card" style="background: linear-gradient(145deg, #1e1b2e 0%, #291834 100%); border: 1px solid #701a75; border-left: 4px solid #f97316; border-radius: 10px; padding: 16px 18px;">
+            <!-- 2. 五角大楼披萨指数卡片 (支持单点立即切换展示独立图表) -->
+            <div class="stat-metric-card" onclick="switchPanicChartMode('pizza')" style="background: linear-gradient(145deg, #1e1b2e 0%, #291834 100%); border: 1px solid #701a75; border-left: 4px solid #f97316; border-radius: 10px; padding: 16px 18px; cursor: pointer; transition: all 0.25s ease;" title="点击切换并查看五角大楼披萨指数全景走势图" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(249, 115, 22, 0.25)';" onmouseout="this.style.transform='none'; this.style.boxShadow='none';">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 12px; color: #cbd5e1; font-weight: 600;">五角大楼披萨指数 (Pizza Meter)</span>
+                    <span style="font-size: 12px; color: #cbd5e1; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                        <span>🍕</span> 五角大楼披萨指数 <span style="font-size: 10px; color: #fbbf24; background: rgba(251, 191, 36, 0.15); padding: 1px 5px; border-radius: 4px;">(点击看图)</span>
+                    </span>
                     <span class="tag" id="metric-pizza-tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">加载中</span>
                 </div>
                 <div style="display: flex; align-items: baseline; gap: 10px;">
@@ -1338,18 +1342,36 @@
             </div>
         </div>
 
-        <!-- 核心图表卡片：VIX vs 披萨指数 34 年联动全景走势图 -->
+        <!-- 核心图表卡片：五角大楼披萨指数 & VIX 恐慌指数 34 年全景看板 -->
         <div style="background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; border-bottom: 1px solid #1e293b; padding-bottom: 12px;">
+            <!-- 图表形态与时间跨度控制栏 -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; border-bottom: 1px solid #1e293b; padding-bottom: 12px;">
                 <div>
-                    <h3 style="font-size: 17px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
-                        <span>📈 VIX 恐慌指数 vs 五角大楼披萨指数 34 年全景联动走势图</span>
-                        <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">(双 Y 轴联动 · 底部全景时间轴缩放条 · 历次地缘危机事件标示)</span>
+                    <!-- 模式切换按钮组 (默认聚焦 🍕 五角大楼披萨指数独立图表) -->
+                    <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 10px; background: rgba(15, 23, 42, 0.9); padding: 5px 8px; border-radius: 8px; border: 1px solid #1e293b; width: fit-content;">
+                        <span style="font-size: 12px; color: #94a3b8; font-weight: 600; margin-right: 4px;">📊 图表形态:</span>
+                        <button class="primary-btn" id="panic-tab-pizza" onclick="switchPanicChartMode('pizza')" style="font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: pointer;">
+                            🍕 五角大楼披萨指数 (独立图表)
+                        </button>
+                        <button class="chart-tab-btn" id="panic-tab-vix" onclick="switchPanicChartMode('vix')" style="font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: pointer;">
+                            📉 CBOE VIX 恐慌指数 (独立图表)
+                        </button>
+                        <button class="chart-tab-btn" id="panic-tab-combined" onclick="switchPanicChartMode('combined')" style="font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: pointer;">
+                            ⚡ 双指标联动对照 (双Y轴图)
+                        </button>
+                        <button class="chart-tab-btn" id="panic-tab-dual" onclick="switchPanicChartMode('dual')" style="font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: pointer;">
+                            📜 上下双图全貌并列
+                        </button>
+                    </div>
+
+                    <h3 style="font-size: 17px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px; margin: 0;" id="panic-chart-main-title">
+                        <span>🍕 五角大楼披萨指数 (Pizza Meter) 全景走势图表</span>
+                        <span style="font-size: 12px; color: #94a3b8; font-weight: normal;" id="panic-chart-sub-title">(地缘军情外卖指数 · DEFCON 1~5 战备色带 · 深夜外卖倍数副图 · 34年连续时序)</span>
                     </h3>
                 </div>
 
                 <!-- 时间跨度快捷切换控制器 -->
-                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px;">
                     <span style="font-size: 12px; color: #94a3b8; margin-right: 4px;">⏱️ 快捷区间:</span>
                     <button class="chart-tab-btn" onclick="zoomPanicTimeline('1m')">近1月</button>
                     <button class="chart-tab-btn" onclick="zoomPanicTimeline('6m')">近6月</button>
@@ -1384,7 +1406,7 @@
             </div>
 
             <!-- ECharts 主图表容器 -->
-            <div id="panic-vix-pizza-chart" style="width: 100%; height: 530px;">
+            <div id="panic-vix-pizza-chart" style="width: 100%; height: 560px;">
                 <div class="loader" style="margin: 180px auto;"></div>
             </div>
         </div>
@@ -1602,6 +1624,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=2.3"></script>
+    <script src="/static/js/app.js?v=3.1_intraday"></script>
 </body>
 </html>

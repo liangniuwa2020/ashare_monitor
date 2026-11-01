@@ -3256,39 +3256,252 @@ function renderStockChart() {
     }
 
     if (currentStockChartType === "minute") {
-        // 渲染即时分时图
+        // 生成标准 241 个即时分时时间刻度 (09:30 - 11:30 共 121 点, 13:01 - 15:00 共 120 点，严格4等分)
+        const fullTimes = [];
+        let h = 9, m = 30;
+        while (h < 11 || (h === 11 && m <= 30)) {
+            fullTimes.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+            m++;
+            if (m === 60) { h++; m = 0; }
+        }
+        h = 13; m = 1;
+        while (h < 15 || (h === 15 && m <= 0)) {
+            fullTimes.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+            m++;
+            if (m === 60) { h++; m = 0; }
+        }
+
+        // 渲染即时分时图：有数据就显示，没有就空着 (null)
         const minutes = cachedStockChartData.minute || [];
-        const times = minutes.map(m => m.time);
-        const prices = minutes.map(m => m.price);
-        const volumes = minutes.map(m => m.volume);
-        const yesterdayClose = cachedStockChartData.quote ? cachedStockChartData.quote.yesterday_close : (prices[0] || 0);
+        const minuteMap = {};
+        minutes.forEach(it => {
+            if (!it || !it.time) return;
+            const t = it.time.length > 5 ? it.time.slice(-5) : it.time;
+            minuteMap[t] = it;
+        });
+        // 兼容处理：若数据中有 13:00 且 13:01 缺失，对齐至 13:01
+        if (minuteMap['13:00'] && !minuteMap['13:01']) {
+            minuteMap['13:01'] = minuteMap['13:00'];
+        }
+
+        // 找到有数据的最新时间点在标准轴中的索引位置
+        let maxIndex = -1;
+        fullTimes.forEach((t, idx) => {
+            if (minuteMap[t] !== undefined) maxIndex = idx;
+        });
+
+        const yesterdayClose = cachedStockChartData.quote ? Number(cachedStockChartData.quote.yesterday_close) : (minutes[0] ? Number(minutes[0].price) : 0);
+
+        const prices = [];
+        const avgPrices = [];
+        const volumes = [];
+        const volumeColors = [];
+        let lastPrice = yesterdayClose || (minutes[0] ? Number(minutes[0].price) : 0);
+
+        fullTimes.forEach((t, idx) => {
+            // 实时数据有的就显示，没有到达或无数据的必须空着 (填 null)
+            if (maxIndex !== -1 && idx <= maxIndex) {
+                const item = minuteMap[t];
+                if (item && item.price !== undefined && item.price !== null) {
+                    const p = Number(item.price);
+                    const avgP = item.avg_price !== undefined && item.avg_price !== null ? Number(item.avg_price) : p;
+                    const v = item.volume !== undefined && item.volume !== null ? Number(item.volume) : 0;
+
+                    prices.push(p);
+                    avgPrices.push(avgP);
+                    volumes.push(v);
+
+                    const isUp = p >= lastPrice;
+                    volumeColors.push(isUp ? '#ef4444' : '#10b981');
+                    lastPrice = p;
+                } else {
+                    // 若盘中有单分钟撮合无成交，延续上一分钟
+                    prices.push(lastPrice);
+                    avgPrices.push(avgPrices.length > 0 ? avgPrices[avgPrices.length - 1] : lastPrice);
+                    volumes.push(0);
+                    volumeColors.push('#64748b');
+                }
+            } else {
+                // 没有实时数据（未来未到达时刻或尚未开盘），一律填 null，保持完全留白
+                prices.push(null);
+                avgPrices.push(null);
+                volumes.push(null);
+                volumeColors.push('#64748b');
+            }
+        });
+
+        // 计算 Y 轴对称范围（以昨收价为中心上下对称）
+        let yMin = undefined, yMax = undefined;
+        let pctMin = undefined, pctMax = undefined;
+        if (yesterdayClose > 0) {
+            const validPrices = prices.filter(p => p !== null && p > 0);
+            const validAvgs = avgPrices.filter(p => p !== null && p > 0);
+            const allValids = [...validPrices, ...validAvgs];
+            if (allValids.length > 0) {
+                let maxDiff = 0;
+                allValids.forEach(p => {
+                    const diff = Math.abs(p - yesterdayClose);
+                    if (diff > maxDiff) maxDiff = diff;
+                });
+                const minPadding = yesterdayClose * 0.005;
+                if (maxDiff < minPadding) maxDiff = minPadding;
+                maxDiff = maxDiff * 1.15;
+                yMin = Number((yesterdayClose - maxDiff).toFixed(2));
+                yMax = Number((yesterdayClose + maxDiff).toFixed(2));
+                pctMin = Number(((yMin - yesterdayClose) / yesterdayClose * 100).toFixed(2));
+                pctMax = Number(((yMax - yesterdayClose) / yesterdayClose * 100).toFixed(2));
+            } else {
+                yMin = Number((yesterdayClose * 0.98).toFixed(2));
+                yMax = Number((yesterdayClose * 1.02).toFixed(2));
+                pctMin = -2.00;
+                pctMax = 2.00;
+            }
+        }
 
         const option = {
-            backgroundColor: 'transparent',
+            backgroundColor: '#0a0e17',
+            legend: {
+                data: ['分时价格', '分时均价'],
+                textStyle: { color: '#cbd5e1', fontSize: 11 },
+                top: 0,
+                right: 20
+            },
             tooltip: {
                 trigger: 'axis',
-                axisPointer: { type: 'cross' }
+                axisPointer: { type: 'cross', lineStyle: { color: 'rgba(255, 255, 255, 0.35)' } },
+                backgroundColor: 'rgba(15, 23, 42, 0.94)',
+                borderColor: '#334155',
+                textStyle: { color: '#f8fafc' },
+                formatter: function(params) {
+                    if (!params || !params.length) return '';
+                    const time = params[0].axisValue;
+                    const pItem = params.find(p => p.seriesName === '分时价格');
+                    const avgItem = params.find(p => p.seriesName === '分时均价');
+                    const vItem = params.find(p => p.seriesName === '分时成交量');
+                    const price = pItem && pItem.data !== null && pItem.data !== undefined ? Number(pItem.data) : null;
+                    if (price === null) {
+                        return `<div style="font-size:12px;color:#94a3b8"><b>时间: ${time}</b><br/>未到达交易时间 (暂无数据)</div>`;
+                    }
+                    const avg = avgItem && avgItem.data !== null && avgItem.data !== undefined ? Number(avgItem.data) : null;
+                    const vol = vItem && vItem.data !== null && vItem.data !== undefined ? (typeof vItem.data === 'object' ? vItem.data.value : vItem.data) : null;
+
+                    let changeStr = '';
+                    if (yesterdayClose > 0) {
+                        const diff = price - yesterdayClose;
+                        const pct = (diff / yesterdayClose) * 100;
+                        const color = diff >= 0 ? '#ef4444' : '#10b981';
+                        const sign = diff >= 0 ? '+' : '';
+                        changeStr = `<br/>涨跌: <span style="color:${color};font-weight:600">${sign}${diff.toFixed(2)} (${sign}${pct.toFixed(2)}%)</span>`;
+                    }
+
+                    return `
+                        <div style="font-size:12px; line-height:1.6;">
+                            <b>时间: ${time}</b><br/>
+                            现价: <span style="font-weight:700; color:#ffffff">¥${price.toFixed(2)}</span>${changeStr}
+                            ${avg !== null ? `<br/>均价: <span style="color:#facc15">¥${avg.toFixed(2)}</span>` : ''}
+                            ${vol !== null ? `<br/>成交: <b style="color:#e2e8f0">${vol.toLocaleString()} 手</b>` : ''}
+                        </div>
+                    `;
+                }
             },
             grid: [
-                { left: '4%', right: '4%', top: '8%', height: '60%' },
-                { left: '4%', right: '4%', top: '75%', height: '18%' }
+                { left: '4%', right: '5%', top: '35px', height: '58%' },
+                { left: '4%', right: '5%', top: '74%', height: '18%' }
             ],
             xAxis: [
-                { type: 'category', data: times, gridIndex: 0, axisLabel: { interval: 29 } },
-                { type: 'category', data: times, gridIndex: 1, axisLabel: { show: false } }
+                {
+                    type: 'category',
+                    data: fullTimes,
+                    gridIndex: 0,
+                    boundaryGap: false,
+                    axisLine: { lineStyle: { color: '#334155' } },
+                    axisTick: {
+                        show: true,
+                        interval: (idx) => idx === 0 || idx === 60 || idx === 120 || idx === 180 || idx === 240,
+                        lineStyle: { color: '#475569' }
+                    },
+                    axisLabel: {
+                        interval: (idx) => idx === 0 || idx === 60 || idx === 120 || idx === 180 || idx === 240,
+                        formatter: (val, idx) => {
+                            if (idx === 0) return '09:30';
+                            if (idx === 60) return '10:30';
+                            if (idx === 120) return '11:30';
+                            if (idx === 180) return '14:00';
+                            if (idx === 240) return '15:00';
+                            return '';
+                        },
+                        align: (val, idx) => {
+                            if (idx === 0) return 'left';
+                            if (idx === 240) return 'right';
+                            return 'center';
+                        },
+                        color: '#94a3b8',
+                        fontSize: 11,
+                        margin: 6
+                    },
+                    splitLine: {
+                        show: true,
+                        interval: (idx) => idx === 60 || idx === 120 || idx === 180,
+                        lineStyle: {
+                            color: 'rgba(239, 68, 68, 0.28)',
+                            type: 'dashed'
+                        }
+                    }
+                },
+                {
+                    type: 'category',
+                    data: fullTimes,
+                    gridIndex: 1,
+                    boundaryGap: false,
+                    axisLine: { lineStyle: { color: '#334155' } },
+                    axisTick: { show: false },
+                    axisLabel: { show: false },
+                    splitLine: {
+                        show: true,
+                        interval: (idx) => idx === 60 || idx === 120 || idx === 180,
+                        lineStyle: {
+                            color: 'rgba(239, 68, 68, 0.28)',
+                            type: 'dashed'
+                        }
+                    }
+                }
             ],
             yAxis: [
                 {
                     type: 'value',
                     gridIndex: 0,
-                    scale: true,
-                    splitLine: { lineStyle: { color: '#233152' } }
+                    min: yMin,
+                    max: yMax,
+                    splitLine: { lineStyle: { color: 'rgba(239, 68, 68, 0.22)', type: 'dashed' } },
+                    axisLabel: {
+                        color: '#94a3b8',
+                        fontSize: 10,
+                        formatter: (v) => Number(v).toFixed(2)
+                    }
+                },
+                {
+                    type: 'value',
+                    gridIndex: 0,
+                    min: pctMin,
+                    max: pctMax,
+                    position: 'right',
+                    splitLine: { show: false },
+                    axisLabel: {
+                        formatter: (v) => `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(2)}%`,
+                        color: (v) => Number(v) > 0 ? '#ef4444' : (Number(v) < 0 ? '#10b981' : '#94a3b8'),
+                        fontSize: 10
+                    }
                 },
                 {
                     type: 'value',
                     gridIndex: 1,
                     scale: true,
-                    splitLine: { show: false }
+                    splitLine: { show: false },
+                    axisLabel: {
+                        color: '#64748b',
+                        fontSize: 9,
+                        formatter: (v) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v
+                    }
                 }
             ],
             series: [
@@ -3297,28 +3510,54 @@ function renderStockChart() {
                     type: 'line',
                     data: prices,
                     gridIndex: 0,
-                    smooth: true,
+                    connectNulls: true,
+                    smooth: false,
                     showSymbol: false,
-                    lineStyle: { width: 2, color: '#38bdf8' },
+                    lineStyle: { width: 1.6, color: '#ffffff' },
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(56, 189, 248, 0.4)' },
-                            { offset: 1, color: 'rgba(56, 189, 248, 0.02)' }
+                            { offset: 0, color: 'rgba(255, 255, 255, 0.20)' },
+                            { offset: 1, color: 'rgba(255, 255, 255, 0.01)' }
                         ])
                     },
                     markLine: yesterdayClose ? {
                         silent: true,
                         symbol: 'none',
-                        data: [{ yAxis: yesterdayClose, lineStyle: { color: '#94a3b8', type: 'dashed' } }]
+                        data: [{
+                            yAxis: yesterdayClose,
+                            lineStyle: { color: 'rgba(239, 68, 68, 0.65)', type: 'dashed', width: 1 },
+                            label: {
+                                position: 'insideStartTop',
+                                formatter: `昨收 ${yesterdayClose.toFixed(2)}`,
+                                color: '#e2e8f0',
+                                fontSize: 10
+                            }
+                        }]
                     } : undefined
+                },
+                {
+                    name: '分时均价',
+                    type: 'line',
+                    data: avgPrices,
+                    gridIndex: 0,
+                    connectNulls: true,
+                    smooth: false,
+                    showSymbol: false,
+                    lineStyle: { width: 1.4, color: '#facc15' }
                 },
                 {
                     name: '分时成交量',
                     type: 'bar',
-                    data: volumes,
+                    barWidth: '60%',
+                    data: volumes.map((v, i) => {
+                        if (v === null || v === undefined) return null;
+                        return {
+                            value: v,
+                            itemStyle: { color: volumeColors[i] || '#f59e0b' }
+                        };
+                    }),
                     xAxisIndex: 1,
-                    yAxisIndex: 1,
-                    itemStyle: { color: '#f59e0b' }
+                    yAxisIndex: 2
                 }
             ]
         };
@@ -5885,6 +6124,55 @@ function renderHuijinTotalTable(records) {
 let panicChartInstance = null;
 let panicBoardDataCache = null;
 let currentPanicZoomRange = "all";
+let currentPanicChartMode = "pizza";
+
+// 切换恐慌与披萨图表形态（独立图表/双指标联动/上下双图）
+function switchPanicChartMode(mode) {
+    currentPanicChartMode = mode;
+
+    // 更新切换按钮高亮状态
+    const tabs = ["pizza", "vix", "combined", "dual"];
+    tabs.forEach(t => {
+        const btn = document.getElementById(`panic-tab-${t}`);
+        if (btn) {
+            if (t === mode) {
+                btn.className = "primary-btn";
+            } else {
+                btn.className = "chart-tab-btn";
+            }
+        }
+    });
+
+    // 动态更新主副标题
+    const mainTitleEl = document.getElementById("panic-chart-main-title");
+    if (mainTitleEl) {
+        if (mode === "pizza") {
+            mainTitleEl.innerHTML = `<span>🍕 五角大楼披萨指数 (Pizza Meter) 走势与K线图</span>
+                <span style="font-size: 12px; color: #94a3b8; font-weight: normal;" id="panic-chart-sub-title">(地缘军情外卖指数 · DEFCON 1~5 战备色带 · 重大危机标记点 · 34年连续时序)</span>`;
+        } else if (mode === "vix") {
+            mainTitleEl.innerHTML = `<span>📉 CBOE VIX 恐慌指数 (专业K线蜡烛图)</span>
+                <span style="font-size: 12px; color: #94a3b8; font-weight: normal;" id="panic-chart-sub-title">(标准开高低收 K 线蜡烛图 · 5/10/20日均线 · 警戒/恐慌阈值线)</span>`;
+        } else if (mode === "combined") {
+            mainTitleEl.innerHTML = `<span>⚡ VIX 恐慌指数 vs 五角大楼披萨指数 (双指标联动对照)</span>
+                <span style="font-size: 12px; color: #94a3b8; font-weight: normal;" id="panic-chart-sub-title">(双 Y 轴联动 · 资本波动率 × 地缘军事情报对照)</span>`;
+        } else if (mode === "dual") {
+            mainTitleEl.innerHTML = `<span>📜 上下双图全貌并列 (上层 VIX 恐慌指数 / 下层 披萨指数)</span>
+                <span style="font-size: 12px; color: #94a3b8; font-weight: normal;" id="panic-chart-sub-title">(同轴多窗格联动 · 独立坐标刻度全景对比)</span>`;
+        }
+    }
+
+    // 重新渲染当前图表
+    if (panicBoardDataCache && panicBoardDataCache.timeline) {
+        renderPanicChart(panicBoardDataCache.timeline, panicBoardDataCache.milestones);
+    } else {
+        loadPanicBoardData();
+    }
+
+    const chartCard = document.getElementById('panic-vix-pizza-chart');
+    if (chartCard) {
+        chartCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
 
 // 1. 加载恐慌数据板块全量数据
 async function loadPanicBoardData(forceRefresh = false) {
@@ -5993,7 +6281,7 @@ function renderPanicSummary(summary) {
     if (elEnd) elEnd.innerText = summary.end_date || "2026-10-21";
 }
 
-// 3. 渲染 VIX vs 披萨指数 34 年全景双轴联动图表
+// 3. 渲染恐慌与披萨全景走势与K线图 (支持4种专业形态: 披萨独立走势/K线、VIX标准K线蜡烛图、双指标联动对照、上下双图全貌并列)
 function renderPanicChart(timeline, milestones) {
     if (!timeline || !timeline.length) return;
     const chartDom = document.getElementById("panic-vix-pizza-chart");
@@ -6010,136 +6298,348 @@ function renderPanicChart(timeline, milestones) {
             if (params.componentType === "markPoint") {
                 const dateClicked = params.data.coord ? params.data.coord[0] : null;
                 if (dateClicked && panicBoardDataCache && panicBoardDataCache.milestones) {
-                    const found = panicBoardDataCache.milestones.find(m => m.date === dateClicked);
+                    const found = panicBoardDataCache.milestones.find(m => m.date === dateClicked || m.mapped_date === dateClicked);
                     if (found) showCrisisDossier(found);
                 }
             } else if (params.componentType === "series") {
                 const dateClicked = params.name;
                 if (dateClicked && panicBoardDataCache && panicBoardDataCache.milestones) {
-                    const found = panicBoardDataCache.milestones.find(m => m.date === dateClicked);
+                    const found = panicBoardDataCache.milestones.find(m => m.date === dateClicked || m.mapped_date === dateClicked);
                     if (found) showCrisisDossier(found);
                 }
             }
         });
     }
 
+    const mode = currentPanicChartMode || "pizza";
     const dates = timeline.map(d => d.date);
-    const vixData = timeline.map(d => d.vix_close);
-    const pizzaData = timeline.map(d => d.pizza_index);
+
+    // 计算移动平均线辅助函数
+    const calcMA = (dayCount, dataArr) => {
+        const result = [];
+        for (let i = 0, len = dataArr.length; i < len; i++) {
+            if (i < dayCount - 1) {
+                result.push(null);
+                continue;
+            }
+            let sum = 0;
+            for (let j = 0; j < dayCount; j++) {
+                sum += (dataArr[i - j] != null ? dataArr[i - j] : 0);
+            }
+            result.push(Number((sum / dayCount).toFixed(2)));
+        }
+        return result;
+    };
 
     // 建立地缘危机 MarkPoint 标记点
-    const markPointData = [];
-    if (milestones && milestones.length) {
-        milestones.forEach(m => {
-            const shortTitle = m.title.replace(/^\d{4}\s*/, "");
-            markPointData.push({
-                name: m.title,
-                coord: [m.date, m.pizza_index],
-                value: m.defcon,
-                itemStyle: {
-                    color: m.pizza_index >= 85 ? "#ef4444" : (m.pizza_index >= 65 ? "#f97316" : "#f59e0b")
-                },
-                symbol: "pin",
-                symbolSize: m.pizza_index >= 85 ? 40 : 32,
-                label: {
-                    show: true,
-                    formatter: shortTitle,
-                    position: "top",
-                    color: "#fde68a",
-                    fontSize: 10,
-                    fontWeight: "bold",
-                    backgroundColor: "rgba(15, 23, 42, 0.85)",
-                    borderColor: "#f59e0b",
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    padding: [3, 6]
+    const makeMarkPoints = (yField, defaultYVal = null) => {
+        const markPointData = [];
+        if (milestones && milestones.length) {
+            milestones.forEach(m => {
+                const shortTitle = m.title.replace(/^\d{4}\s*/, "");
+                const targetDate = m.mapped_date || m.date;
+                let targetY = defaultYVal;
+                if (targetY === null) {
+                    const matchedItem = timeline.find(d => d.date === targetDate);
+                    targetY = matchedItem ? matchedItem[yField] : (m[yField] || 50);
                 }
+                markPointData.push({
+                    name: m.title,
+                    coord: [targetDate, targetY],
+                    value: m.defcon,
+                    itemStyle: {
+                        color: (m.pizza_index >= 85) ? "#ef4444" : (m.pizza_index >= 65 ? "#f97316" : "#f59e0b")
+                    },
+                    symbol: "pin",
+                    symbolSize: (m.pizza_index >= 85) ? 40 : 32,
+                    label: {
+                        show: true,
+                        formatter: shortTitle,
+                        position: "top",
+                        color: "#fde68a",
+                        fontSize: 10,
+                        fontWeight: "bold",
+                        backgroundColor: "rgba(15, 23, 42, 0.85)",
+                        borderColor: "#f59e0b",
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        padding: [3, 6]
+                    }
+                });
             });
-        });
-    }
+        }
+        return markPointData;
+    };
 
-    // 设定全量时序图表配置
-    const option = {
-        backgroundColor: "transparent",
-        animation: true,
-        animationDuration: 1200,
-        tooltip: {
-            trigger: "axis",
-            backgroundColor: "rgba(15, 23, 42, 0.95)",
-            borderColor: "#334155",
-            borderWidth: 1,
-            textStyle: { color: "#f8fafc", fontSize: 12 },
-            axisPointer: {
-                type: "cross",
-                crossStyle: { color: "#94a3b8" },
-                lineStyle: { type: "dashed", color: "#64748b" }
-            },
-            formatter: function(params) {
-                if (!params || !params.length) return "";
-                const dateStr = params[0].axisValue;
-                
-                // 检查是否恰好命中重大危机
-                let crisisHtml = "";
-                if (panicBoardDataCache && panicBoardDataCache.milestones) {
-                    const matched = panicBoardDataCache.milestones.find(m => m.date === dateStr);
-                    if (matched) {
+    let option = {};
+
+    // -------------------------------------------------------------
+    // 形态 1: 🍕 五角大楼披萨指数 (独立图表 - 走势与微型波动区间K线形态)
+    // -------------------------------------------------------------
+    if (mode === "pizza") {
+        const pizzaData = timeline.map(d => d.pizza_index);
+        const pizzaMA5 = calcMA(5, pizzaData);
+        const pizzaMA20 = calcMA(20, pizzaData);
+        const markPoints = makeMarkPoints("pizza_index");
+
+        option = {
+            backgroundColor: "transparent",
+            animation: true,
+            animationDuration: 1000,
+            tooltip: {
+                trigger: "axis",
+                backgroundColor: "rgba(15, 23, 42, 0.95)",
+                borderColor: "#334155",
+                borderWidth: 1,
+                textStyle: { color: "#f8fafc", fontSize: 12 },
+                axisPointer: {
+                    type: "cross",
+                    crossStyle: { color: "#94a3b8" },
+                    lineStyle: { type: "dashed", color: "#64748b" }
+                },
+                formatter: function(params) {
+                    if (!params || !params.length) return "";
+                    const dateStr = params[0].axisValue;
+                    const matchedItem = timeline.find(d => d.date === dateStr);
+                    const matchedCrisis = panicBoardDataCache && panicBoardDataCache.milestones ? panicBoardDataCache.milestones.find(m => m.date === dateStr || m.mapped_date === dateStr) : null;
+
+                    let crisisHtml = "";
+                    if (matchedCrisis) {
                         crisisHtml = `
                             <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #475569; background:rgba(239,68,68,0.12); padding:6px 8px; border-radius:4px;">
-                                <div style="color:#f87171; font-weight:800; font-size:12px;">🚨 ${matched.title} (${matched.action_code || '危机行动'})</div>
-                                <div style="color:#cbd5e1; font-size:11px; margin-top:3px; line-height:1.4;">${matched.description}</div>
-                                <div style="color:#38bdf8; font-size:11px; margin-top:3px;">📈 市场冲击: ${matched.market_impact}</div>
+                                <div style="color:#f87171; font-weight:800; font-size:12px;">🚨 ${matchedCrisis.title} (${matchedCrisis.action_code || '危机行动'})</div>
+                                <div style="color:#cbd5e1; font-size:11px; margin-top:3px; line-height:1.4;">${matchedCrisis.description}</div>
+                                <div style="color:#fbbf24; font-size:11px; margin-top:3px;">🍕 披萨指数峰值: ${matchedCrisis.pizza_index} (${matchedCrisis.defcon})</div>
                             </div>
                         `;
                     }
-                }
 
-                let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:6px; font-size:13px;">📅 日期: ${dateStr}</div>`;
-                params.forEach(p => {
-                    const color = p.color;
-                    const val = p.value != null ? Number(p.value).toFixed(2) : "--";
-                    const isVix = p.seriesName.includes("VIX");
-                    const icon = isVix ? "📊" : "🍕";
-                    const extra = isVix 
-                        ? (p.value >= 40 ? " <b style='color:#ef4444;'>(极度恐慌)</b>" : (p.value >= 20 ? " <span style='color:#eab308;'>(警戒)</span>" : " <span style='color:#10b981;'>(平稳)</span>"))
-                        : (p.value >= 65 ? " <b style='color:#ef4444;'>(DEFCON 3/1 警戒)</b>" : " <span style='color:#10b981;'>(常态)</span>");
+                    let pzVal = matchedItem ? matchedItem.pizza_index : "--";
+                    let levelLabel = matchedItem ? (matchedItem.level_label || "") : "";
+                    let html = `<div style="font-weight:700; color:#fbbf24; margin-bottom:6px; font-size:13px;">🍕 五角大楼披萨指数 · ${dateStr}</div>`;
                     html += `
                         <div style="display:flex; justify-content:space-between; gap:16px; margin:3px 0;">
-                            <span>${icon} <span style="color:${color}; font-weight:600;">${p.seriesName}</span>:</span>
-                            <span><b>${val}</b> ${extra}</span>
+                            <span>披萨外卖活跃度:</span>
+                            <span style="font-weight:bold; color:#fbbf24; font-size:14px;">${pzVal} 分</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; gap:16px; margin:3px 0; color:#94a3b8; font-size:11px;">
+                            <span>战备状态评估:</span>
+                            <span style="color:#e2e8f0; font-weight:600;">${levelLabel}</span>
                         </div>
                     `;
-                });
 
-                html += crisisHtml;
-                return html;
-            }
-        },
-        legend: {
-            data: ["CBOE VIX 恐慌指数", "五角大楼披萨指数 (Pizza Meter)"],
-            top: 0,
-            right: 20,
-            textStyle: { color: "#cbd5e1", fontSize: 12 },
-            itemGap: 18
-        },
-        grid: {
-            top: 45,
-            left: 55,
-            right: 55,
-            bottom: 70
-        },
-        xAxis: {
-            type: "category",
-            data: dates,
-            boundaryGap: false,
-            axisLine: { lineStyle: { color: "#334155" } },
-            axisLabel: { color: "#94a3b8", fontSize: 11 },
-            splitLine: { show: false }
-        },
-        yAxis: [
-            {
+                    params.forEach(p => {
+                        if (p.seriesName.includes("MA")) {
+                            html += `<div style="display:flex; justify-content:space-between; gap:16px; margin:2px 0; font-size:11px; color:${p.color};">
+                                <span>${p.seriesName}:</span>
+                                <span>${p.value != null ? Number(p.value).toFixed(1) : '--'}</span>
+                            </div>`;
+                        }
+                    });
+
+                    html += crisisHtml;
+                    return html;
+                }
+            },
+            legend: {
+                data: ["五角大楼披萨指数", "5日平滑均线 (MA5)", "20日战备均线 (MA20)"],
+                top: 0,
+                right: 20,
+                textStyle: { color: "#cbd5e1", fontSize: 12 },
+                itemGap: 16
+            },
+            grid: {
+                top: 45,
+                left: 50,
+                right: 40,
+                bottom: 70
+            },
+            xAxis: {
+                type: "category",
+                data: dates,
+                boundaryGap: false,
+                axisLine: { lineStyle: { color: "#334155" } },
+                axisLabel: { color: "#94a3b8", fontSize: 11 },
+                splitLine: { show: false }
+            },
+            yAxis: {
                 type: "value",
-                name: "VIX 恐慌指数",
-                nameTextStyle: { color: "#38bdf8", fontSize: 12, padding: [0, 0, 0, 10] },
+                name: "披萨指数 (Pizza Meter 0-100)",
+                nameTextStyle: { color: "#fbbf24", fontSize: 12, padding: [0, 0, 0, 20] },
+                min: 0,
+                max: 105,
+                interval: 20,
+                axisLabel: { color: "#fbbf24", formatter: "{value}" },
+                axisLine: { show: true, lineStyle: { color: "#d97706" } },
+                splitLine: { lineStyle: { color: "rgba(51, 65, 85, 0.4)", type: "dashed" } }
+            },
+            dataZoom: [
+                { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
+                {
+                    type: "slider",
+                    xAxisIndex: 0,
+                    bottom: 12,
+                    height: 24,
+                    borderColor: "#334155",
+                    backgroundColor: "#0f172a",
+                    fillerColor: "rgba(245, 158, 11, 0.18)",
+                    handleStyle: { color: "#f59e0b", borderColor: "#d97706" },
+                    textStyle: { color: "#94a3b8", fontSize: 10 },
+                    start: 0,
+                    end: 100
+                }
+            ],
+            series: [
+                {
+                    name: "五角大楼披萨指数",
+                    type: "line",
+                    data: pizzaData,
+                    smooth: true,
+                    showSymbol: false,
+                    sampling: "lttb",
+                    lineStyle: { width: 2.2, color: "#f59e0b" },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: "rgba(245, 158, 11, 0.38)" },
+                            { offset: 1, color: "rgba(245, 158, 11, 0.0)" }
+                        ])
+                    },
+                    markLine: {
+                        silent: true,
+                        symbol: "none",
+                        data: [
+                            { yAxis: 45, lineStyle: { color: "#eab308", type: "dashed", width: 1 }, label: { formatter: "DEFCON 4 (戒备 45)", position: "insideEndTop", color: "#eab308", fontSize: 10 } },
+                            { yAxis: 65, lineStyle: { color: "#f97316", type: "dashed", width: 1.2 }, label: { formatter: "DEFCON 3 (警戒 65)", position: "insideEndTop", color: "#f97316", fontSize: 10 } },
+                            { yAxis: 85, lineStyle: { color: "#ef4444", type: "dashed", width: 1.5 }, label: { formatter: "DEFCON 1/2 (战时 85)", position: "insideEndTop", color: "#ef4444", fontSize: 10 } }
+                        ]
+                    },
+                    markPoint: {
+                        data: markPoints
+                    }
+                },
+                {
+                    name: "5日平滑均线 (MA5)",
+                    type: "line",
+                    data: pizzaMA5,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 1.4, color: "#38bdf8", opacity: 0.85 }
+                },
+                {
+                    name: "20日战备均线 (MA20)",
+                    type: "line",
+                    data: pizzaMA20,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 1.4, color: "#c084fc", opacity: 0.85 }
+                }
+            ]
+        };
+    }
+
+    // -------------------------------------------------------------
+    // 形态 2: 📉 CBOE VIX 恐慌指数 (独立图表 - 标准 K 线蜡烛图 Candlestick)
+    // -------------------------------------------------------------
+    else if (mode === "vix") {
+        // ECharts candlestick 格式: [open, close, lowest, highest]
+        const candleValues = timeline.map(d => [
+            d.vix_open != null ? d.vix_open : d.vix_close,
+            d.vix_close != null ? d.vix_close : d.vix_open,
+            d.vix_low != null ? d.vix_low : Math.min(d.vix_open || d.vix_close, d.vix_close || d.vix_open),
+            d.vix_high != null ? d.vix_high : Math.max(d.vix_open || d.vix_close, d.vix_close || d.vix_open)
+        ]);
+        const vixCloses = timeline.map(d => d.vix_close);
+        const vixMA5 = calcMA(5, vixCloses);
+        const vixMA20 = calcMA(20, vixCloses);
+        const vixMarkPoints = makeMarkPoints("vix_peak");
+
+        option = {
+            backgroundColor: "transparent",
+            animation: true,
+            animationDuration: 1000,
+            tooltip: {
+                trigger: "axis",
+                backgroundColor: "rgba(15, 23, 42, 0.95)",
+                borderColor: "#334155",
+                borderWidth: 1,
+                textStyle: { color: "#f8fafc", fontSize: 12 },
+                axisPointer: {
+                    type: "cross",
+                    crossStyle: { color: "#94a3b8" },
+                    lineStyle: { type: "dashed", color: "#64748b" }
+                },
+                formatter: function(params) {
+                    if (!params || !params.length) return "";
+                    const dateStr = params[0].axisValue;
+                    const matchedItem = timeline.find(d => d.date === dateStr);
+                    const matchedCrisis = panicBoardDataCache && panicBoardDataCache.milestones ? panicBoardDataCache.milestones.find(m => m.date === dateStr || m.mapped_date === dateStr) : null;
+
+                    let crisisHtml = "";
+                    if (matchedCrisis) {
+                        crisisHtml = `
+                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #475569; background:rgba(239,68,68,0.12); padding:6px 8px; border-radius:4px;">
+                                <div style="color:#f87171; font-weight:800; font-size:12px;">🚨 ${matchedCrisis.title}</div>
+                                <div style="color:#cbd5e1; font-size:11px; margin-top:3px; line-height:1.4;">${matchedCrisis.description}</div>
+                                <div style="color:#38bdf8; font-size:11px; margin-top:3px;">📈 危机 VIX 极值: ${matchedCrisis.vix_peak}</div>
+                            </div>
+                        `;
+                    }
+
+                    let o = matchedItem ? matchedItem.vix_open : "--";
+                    let c = matchedItem ? matchedItem.vix_close : "--";
+                    let h = matchedItem ? matchedItem.vix_high : "--";
+                    let l = matchedItem ? matchedItem.vix_low : "--";
+                    const isUp = Number(c) >= Number(o);
+                    const color = isUp ? "#ef4444" : "#10b981";
+
+                    let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:6px; font-size:13px;">📉 CBOE VIX 恐慌指数K线 · ${dateStr}</div>`;
+                    html += `
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin:4px 0; font-size:12px;">
+                            <div>开盘: <b>${o != null ? Number(o).toFixed(2) : '--'}</b></div>
+                            <div>收盘: <b style="color:${color};">${c != null ? Number(c).toFixed(2) : '--'}</b></div>
+                            <div>最高: <b style="color:#ef4444;">${h != null ? Number(h).toFixed(2) : '--'}</b></div>
+                            <div>最低: <b style="color:#10b981;">${l != null ? Number(l).toFixed(2) : '--'}</b></div>
+                        </div>
+                    `;
+
+                    params.forEach(p => {
+                        if (p.seriesName.includes("MA")) {
+                            html += `<div style="display:flex; justify-content:space-between; gap:16px; margin:2px 0; font-size:11px; color:${p.color};">
+                                <span>${p.seriesName}:</span>
+                                <span>${p.value != null ? Number(p.value).toFixed(2) : '--'}</span>
+                            </div>`;
+                        }
+                    });
+
+                    html += crisisHtml;
+                    return html;
+                }
+            },
+            legend: {
+                data: ["VIX K线蜡烛图", "5日均线 (MA5)", "20日均线 (MA20)"],
+                top: 0,
+                right: 20,
+                textStyle: { color: "#cbd5e1", fontSize: 12 },
+                itemGap: 16
+            },
+            grid: {
+                top: 45,
+                left: 50,
+                right: 40,
+                bottom: 70
+            },
+            xAxis: {
+                type: "category",
+                data: dates,
+                boundaryGap: true,
+                axisLine: { lineStyle: { color: "#334155" } },
+                axisLabel: { color: "#94a3b8", fontSize: 11 },
+                splitLine: { show: false }
+            },
+            yAxis: {
+                type: "value",
+                name: "VIX 恐慌指数点位",
+                nameTextStyle: { color: "#38bdf8", fontSize: 12, padding: [0, 0, 0, 20] },
                 min: 0,
                 max: 95,
                 interval: 20,
@@ -6147,87 +6647,433 @@ function renderPanicChart(timeline, milestones) {
                 axisLine: { show: true, lineStyle: { color: "#0284c7" } },
                 splitLine: { lineStyle: { color: "rgba(51, 65, 85, 0.4)", type: "dashed" } }
             },
-            {
-                type: "value",
-                name: "披萨指数 (0-100)",
-                nameTextStyle: { color: "#f59e0b", fontSize: 12, padding: [0, 10, 0, 0] },
-                min: 0,
-                max: 105,
-                interval: 20,
-                position: "right",
-                axisLabel: { color: "#f59e0b", formatter: "{value}" },
-                axisLine: { show: true, lineStyle: { color: "#d97706" } },
-                splitLine: { show: false }
-            }
-        ],
-        dataZoom: [
-            {
-                type: "inside",
-                xAxisIndex: 0,
-                start: 0,
-                end: 100
-            },
-            {
-                type: "slider",
-                xAxisIndex: 0,
-                bottom: 12,
-                height: 24,
+            dataZoom: [
+                { type: "inside", xAxisIndex: 0, start: 85, end: 100 },
+                {
+                    type: "slider",
+                    xAxisIndex: 0,
+                    bottom: 12,
+                    height: 24,
+                    borderColor: "#334155",
+                    backgroundColor: "#0f172a",
+                    fillerColor: "rgba(56, 189, 248, 0.18)",
+                    handleStyle: { color: "#38bdf8", borderColor: "#0284c7" },
+                    textStyle: { color: "#94a3b8", fontSize: 10 },
+                    start: 85,
+                    end: 100
+                }
+            ],
+            series: [
+                {
+                    name: "VIX K线蜡烛图",
+                    type: "candlestick",
+                    data: candleValues,
+                    itemStyle: {
+                        color: "#ef4444",
+                        color0: "#10b981",
+                        borderColor: "#ef4444",
+                        borderColor0: "#10b981"
+                    },
+                    markLine: {
+                        silent: true,
+                        symbol: "none",
+                        data: [
+                            { yAxis: 20, lineStyle: { color: "#eab308", type: "dashed", width: 1 }, label: { formatter: "警惕线 20", position: "insideEndTop", color: "#eab308", fontSize: 10 } },
+                            { yAxis: 30, lineStyle: { color: "#f97316", type: "dashed", width: 1.2 }, label: { formatter: "恐慌线 30", position: "insideEndTop", color: "#f97316", fontSize: 10 } },
+                            { yAxis: 40, lineStyle: { color: "#ef4444", type: "dashed", width: 1.5 }, label: { formatter: "极度恐慌 40", position: "insideEndTop", color: "#ef4444", fontSize: 10 } }
+                        ]
+                    },
+                    markPoint: {
+                        data: vixMarkPoints
+                    }
+                },
+                {
+                    name: "5日均线 (MA5)",
+                    type: "line",
+                    data: vixMA5,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 1.4, color: "#fbbf24", opacity: 0.9 }
+                },
+                {
+                    name: "20日均线 (MA20)",
+                    type: "line",
+                    data: vixMA20,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 1.4, color: "#a855f7", opacity: 0.9 }
+                }
+            ]
+        };
+    }
+
+    // -------------------------------------------------------------
+    // 形态 3: ⚡ 双指标联动对照 (双Y轴走势与对比图)
+    // -------------------------------------------------------------
+    else if (mode === "combined") {
+        const vixData = timeline.map(d => d.vix_close);
+        const pizzaData = timeline.map(d => d.pizza_index);
+        const markPoints = makeMarkPoints("pizza_index");
+
+        option = {
+            backgroundColor: "transparent",
+            animation: true,
+            animationDuration: 1000,
+            tooltip: {
+                trigger: "axis",
+                backgroundColor: "rgba(15, 23, 42, 0.95)",
                 borderColor: "#334155",
-                backgroundColor: "#0f172a",
-                fillerColor: "rgba(56, 189, 248, 0.15)",
-                handleStyle: { color: "#38bdf8", borderColor: "#0284c7" },
-                textStyle: { color: "#94a3b8", fontSize: 10 },
-                start: 0,
-                end: 100
-            }
-        ],
-        series: [
-            {
-                name: "CBOE VIX 恐慌指数",
-                type: "line",
-                yAxisIndex: 0,
-                data: vixData,
-                smooth: true,
-                showSymbol: false,
-                sampling: "lttb",
-                lineStyle: { width: 1.8, color: "#38bdf8" },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: "rgba(56, 189, 248, 0.35)" },
-                        { offset: 1, color: "rgba(56, 189, 248, 0.0)" }
-                    ])
+                borderWidth: 1,
+                textStyle: { color: "#f8fafc", fontSize: 12 },
+                axisPointer: {
+                    type: "cross",
+                    crossStyle: { color: "#94a3b8" },
+                    lineStyle: { type: "dashed", color: "#64748b" }
                 },
-                markLine: {
-                    silent: true,
-                    symbol: "none",
-                    data: [
-                        { yAxis: 20, lineStyle: { color: "#eab308", type: "dashed", width: 1 }, label: { formatter: "警惕线 20", position: "insideEndTop", color: "#eab308", fontSize: 10 } },
-                        { yAxis: 30, lineStyle: { color: "#f97316", type: "dashed", width: 1 }, label: { formatter: "恐慌线 30", position: "insideEndTop", color: "#f97316", fontSize: 10 } },
-                        { yAxis: 40, lineStyle: { color: "#ef4444", type: "dashed", width: 1.5 }, label: { formatter: "极度恐慌 40", position: "insideEndTop", color: "#ef4444", fontSize: 10 } }
-                    ]
+                formatter: function(params) {
+                    if (!params || !params.length) return "";
+                    const dateStr = params[0].axisValue;
+                    const matchedCrisis = panicBoardDataCache && panicBoardDataCache.milestones ? panicBoardDataCache.milestones.find(m => m.date === dateStr || m.mapped_date === dateStr) : null;
+
+                    let crisisHtml = "";
+                    if (matchedCrisis) {
+                        crisisHtml = `
+                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #475569; background:rgba(239,68,68,0.12); padding:6px 8px; border-radius:4px;">
+                                <div style="color:#f87171; font-weight:800; font-size:12px;">🚨 ${matchedCrisis.title} (${matchedCrisis.action_code || '危机行动'})</div>
+                                <div style="color:#cbd5e1; font-size:11px; margin-top:3px; line-height:1.4;">${matchedCrisis.description}</div>
+                                <div style="color:#38bdf8; font-size:11px; margin-top:3px;">📈 市场冲击: ${matchedCrisis.market_impact}</div>
+                            </div>
+                        `;
+                    }
+
+                    let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:6px; font-size:13px;">📅 日期: ${dateStr}</div>`;
+                    params.forEach(p => {
+                        const color = p.color;
+                        const val = p.value != null ? Number(p.value).toFixed(2) : "--";
+                        const isVix = p.seriesName.includes("VIX");
+                        const icon = isVix ? "📊" : "🍕";
+                        const extra = isVix 
+                            ? (p.value >= 40 ? " <b style='color:#ef4444;'>(极度恐慌)</b>" : (p.value >= 20 ? " <span style='color:#eab308;'>(警戒)</span>" : " <span style='color:#10b981;'>(平稳)</span>"))
+                            : (p.value >= 65 ? " <b style='color:#ef4444;'>(DEFCON 3/1 警戒)</b>" : " <span style='color:#10b981;'>(常态)</span>");
+                        html += `
+                            <div style="display:flex; justify-content:space-between; gap:16px; margin:3px 0;">
+                                <span>${icon} <span style="color:${color}; font-weight:600;">${p.seriesName}</span>:</span>
+                                <span><b>${val}</b> ${extra}</span>
+                            </div>
+                        `;
+                    });
+
+                    html += crisisHtml;
+                    return html;
                 }
             },
-            {
-                name: "五角大楼披萨指数 (Pizza Meter)",
-                type: "line",
-                yAxisIndex: 1,
-                data: pizzaData,
-                smooth: true,
-                showSymbol: false,
-                sampling: "lttb",
-                lineStyle: { width: 2.2, color: "#f59e0b" },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: "rgba(245, 158, 11, 0.35)" },
-                        { offset: 1, color: "rgba(245, 158, 11, 0.0)" }
-                    ])
+            legend: {
+                data: ["CBOE VIX 恐慌指数", "五角大楼披萨指数 (Pizza Meter)"],
+                top: 0,
+                right: 20,
+                textStyle: { color: "#cbd5e1", fontSize: 12 },
+                itemGap: 18
+            },
+            grid: {
+                top: 45,
+                left: 55,
+                right: 55,
+                bottom: 70
+            },
+            xAxis: {
+                type: "category",
+                data: dates,
+                boundaryGap: false,
+                axisLine: { lineStyle: { color: "#334155" } },
+                axisLabel: { color: "#94a3b8", fontSize: 11 },
+                splitLine: { show: false }
+            },
+            yAxis: [
+                {
+                    type: "value",
+                    name: "VIX 恐慌指数",
+                    nameTextStyle: { color: "#38bdf8", fontSize: 12, padding: [0, 0, 0, 10] },
+                    min: 0,
+                    max: 95,
+                    interval: 20,
+                    axisLabel: { color: "#38bdf8", formatter: "{value}" },
+                    axisLine: { show: true, lineStyle: { color: "#0284c7" } },
+                    splitLine: { lineStyle: { color: "rgba(51, 65, 85, 0.4)", type: "dashed" } }
                 },
-                markPoint: {
-                    data: markPointData
+                {
+                    type: "value",
+                    name: "披萨指数 (0-100)",
+                    nameTextStyle: { color: "#f59e0b", fontSize: 12, padding: [0, 10, 0, 0] },
+                    min: 0,
+                    max: 105,
+                    interval: 20,
+                    position: "right",
+                    axisLabel: { color: "#f59e0b", formatter: "{value}" },
+                    axisLine: { show: true, lineStyle: { color: "#d97706" } },
+                    splitLine: { show: false }
                 }
-            }
-        ]
-    };
+            ],
+            dataZoom: [
+                { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
+                {
+                    type: "slider",
+                    xAxisIndex: 0,
+                    bottom: 12,
+                    height: 24,
+                    borderColor: "#334155",
+                    backgroundColor: "#0f172a",
+                    fillerColor: "rgba(56, 189, 248, 0.15)",
+                    handleStyle: { color: "#38bdf8", borderColor: "#0284c7" },
+                    textStyle: { color: "#94a3b8", fontSize: 10 },
+                    start: 0,
+                    end: 100
+                }
+            ],
+            series: [
+                {
+                    name: "CBOE VIX 恐慌指数",
+                    type: "line",
+                    yAxisIndex: 0,
+                    data: vixData,
+                    smooth: true,
+                    showSymbol: false,
+                    sampling: "lttb",
+                    lineStyle: { width: 1.8, color: "#38bdf8" },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: "rgba(56, 189, 248, 0.35)" },
+                            { offset: 1, color: "rgba(56, 189, 248, 0.0)" }
+                        ])
+                    },
+                    markLine: {
+                        silent: true,
+                        symbol: "none",
+                        data: [
+                            { yAxis: 20, lineStyle: { color: "#eab308", type: "dashed", width: 1 }, label: { formatter: "警惕线 20", position: "insideEndTop", color: "#eab308", fontSize: 10 } },
+                            { yAxis: 30, lineStyle: { color: "#f97316", type: "dashed", width: 1 }, label: { formatter: "恐慌线 30", position: "insideEndTop", color: "#f97316", fontSize: 10 } },
+                            { yAxis: 40, lineStyle: { color: "#ef4444", type: "dashed", width: 1.5 }, label: { formatter: "极度恐慌 40", position: "insideEndTop", color: "#ef4444", fontSize: 10 } }
+                        ]
+                    }
+                },
+                {
+                    name: "五角大楼披萨指数 (Pizza Meter)",
+                    type: "line",
+                    yAxisIndex: 1,
+                    data: pizzaData,
+                    smooth: true,
+                    showSymbol: false,
+                    sampling: "lttb",
+                    lineStyle: { width: 2.2, color: "#f59e0b" },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: "rgba(245, 158, 11, 0.35)" },
+                            { offset: 1, color: "rgba(245, 158, 11, 0.0)" }
+                        ])
+                    },
+                    markPoint: {
+                        data: markPoints
+                    }
+                }
+            ]
+        };
+    }
+
+    // -------------------------------------------------------------
+    // 形态 4: 📜 上下双图全貌并列 (上窗格 VIX K线 / 下窗格 披萨指数走势)
+    // -------------------------------------------------------------
+    else if (mode === "dual") {
+        const candleValues = timeline.map(d => [
+            d.vix_open != null ? d.vix_open : d.vix_close,
+            d.vix_close != null ? d.vix_close : d.vix_open,
+            d.vix_low != null ? d.vix_low : Math.min(d.vix_open || d.vix_close, d.vix_close || d.vix_open),
+            d.vix_high != null ? d.vix_high : Math.max(d.vix_open || d.vix_close, d.vix_close || d.vix_open)
+        ]);
+        const vixCloses = timeline.map(d => d.vix_close);
+        const vixMA5 = calcMA(5, vixCloses);
+        const pizzaData = timeline.map(d => d.pizza_index);
+        const markPoints = makeMarkPoints("pizza_index");
+
+        option = {
+            backgroundColor: "transparent",
+            animation: true,
+            animationDuration: 1000,
+            tooltip: {
+                trigger: "axis",
+                backgroundColor: "rgba(15, 23, 42, 0.95)",
+                borderColor: "#334155",
+                borderWidth: 1,
+                textStyle: { color: "#f8fafc", fontSize: 12 },
+                axisPointer: {
+                    type: "cross",
+                    crossStyle: { color: "#94a3b8" },
+                    lineStyle: { type: "dashed", color: "#64748b" }
+                },
+                formatter: function(params) {
+                    if (!params || !params.length) return "";
+                    const dateStr = params[0].axisValue;
+                    const matchedItem = timeline.find(d => d.date === dateStr);
+                    const matchedCrisis = panicBoardDataCache && panicBoardDataCache.milestones ? panicBoardDataCache.milestones.find(m => m.date === dateStr || m.mapped_date === dateStr) : null;
+
+                    let crisisHtml = "";
+                    if (matchedCrisis) {
+                        crisisHtml = `
+                            <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #475569; background:rgba(239,68,68,0.12); padding:6px 8px; border-radius:4px;">
+                                <div style="color:#f87171; font-weight:800; font-size:12px;">🚨 ${matchedCrisis.title}</div>
+                                <div style="color:#cbd5e1; font-size:11px; margin-top:3px; line-height:1.4;">${matchedCrisis.description}</div>
+                            </div>
+                        `;
+                    }
+
+                    let vixVal = matchedItem ? (matchedItem.vix_close != null ? Number(matchedItem.vix_close).toFixed(2) : '--') : '--';
+                    let pizzaVal = matchedItem ? (matchedItem.pizza_index != null ? Number(matchedItem.pizza_index).toFixed(1) : '--') : '--';
+
+                    let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:6px; font-size:13px;">📅 日期: ${dateStr}</div>`;
+                    html += `
+                        <div style="display:flex; justify-content:space-between; gap:16px; margin:3px 0;">
+                            <span>📉 VIX 恐慌指数收盘:</span>
+                            <span style="font-weight:bold; color:#38bdf8;">${vixVal}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; gap:16px; margin:3px 0;">
+                            <span>🍕 五角大楼披萨指数:</span>
+                            <span style="font-weight:bold; color:#fbbf24;">${pizzaVal} 分</span>
+                        </div>
+                    `;
+
+                    html += crisisHtml;
+                    return html;
+                }
+            },
+            legend: {
+                data: ["VIX K线蜡烛图", "VIX 5日均线", "五角大楼披萨指数"],
+                top: 0,
+                right: 20,
+                textStyle: { color: "#cbd5e1", fontSize: 12 },
+                itemGap: 16
+            },
+            axisPointer: {
+                link: [{ xAxisIndex: "all" }]
+            },
+            grid: [
+                { left: 55, right: 35, top: 40, height: "42%" },
+                { left: 55, right: 35, top: "56%", height: "30%" }
+            ],
+            xAxis: [
+                {
+                    type: "category",
+                    data: dates,
+                    gridIndex: 0,
+                    boundaryGap: true,
+                    axisLine: { lineStyle: { color: "#334155" } },
+                    axisLabel: { show: false },
+                    splitLine: { show: false }
+                },
+                {
+                    type: "category",
+                    data: dates,
+                    gridIndex: 1,
+                    boundaryGap: false,
+                    axisLine: { lineStyle: { color: "#334155" } },
+                    axisLabel: { color: "#94a3b8", fontSize: 11 },
+                    splitLine: { show: false }
+                }
+            ],
+            yAxis: [
+                {
+                    type: "value",
+                    gridIndex: 0,
+                    name: "VIX 恐慌K线",
+                    nameTextStyle: { color: "#38bdf8", fontSize: 11, padding: [0, 0, 0, 10] },
+                    min: 0,
+                    max: 95,
+                    interval: 25,
+                    axisLabel: { color: "#38bdf8", fontSize: 10 },
+                    axisLine: { show: true, lineStyle: { color: "#0284c7" } },
+                    splitLine: { lineStyle: { color: "rgba(51, 65, 85, 0.4)", type: "dashed" } }
+                },
+                {
+                    type: "value",
+                    gridIndex: 1,
+                    name: "披萨指数",
+                    nameTextStyle: { color: "#fbbf24", fontSize: 11, padding: [0, 0, 0, 10] },
+                    min: 0,
+                    max: 105,
+                    interval: 35,
+                    axisLabel: { color: "#fbbf24", fontSize: 10 },
+                    axisLine: { show: true, lineStyle: { color: "#d97706" } },
+                    splitLine: { lineStyle: { color: "rgba(51, 65, 85, 0.3)", type: "dashed" } }
+                }
+            ],
+            dataZoom: [
+                { type: "inside", xAxisIndex: [0, 1], start: 70, end: 100 },
+                {
+                    type: "slider",
+                    xAxisIndex: [0, 1],
+                    bottom: 10,
+                    height: 22,
+                    borderColor: "#334155",
+                    backgroundColor: "#0f172a",
+                    fillerColor: "rgba(56, 189, 248, 0.16)",
+                    handleStyle: { color: "#38bdf8", borderColor: "#0284c7" },
+                    textStyle: { color: "#94a3b8", fontSize: 10 },
+                    start: 70,
+                    end: 100
+                }
+            ],
+            series: [
+                {
+                    name: "VIX K线蜡烛图",
+                    type: "candlestick",
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    data: candleValues,
+                    itemStyle: {
+                        color: "#ef4444",
+                        color0: "#10b981",
+                        borderColor: "#ef4444",
+                        borderColor0: "#10b981"
+                    },
+                    markLine: {
+                        silent: true,
+                        symbol: "none",
+                        data: [
+                            { yAxis: 20, lineStyle: { color: "#eab308", type: "dashed", width: 1 } },
+                            { yAxis: 30, lineStyle: { color: "#f97316", type: "dashed", width: 1 } },
+                            { yAxis: 40, lineStyle: { color: "#ef4444", type: "dashed", width: 1.5 } }
+                        ]
+                    }
+                },
+                {
+                    name: "VIX 5日均线",
+                    type: "line",
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    data: vixMA5,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 1.3, color: "#fbbf24" }
+                },
+                {
+                    name: "五角大楼披萨指数",
+                    type: "line",
+                    xAxisIndex: 1,
+                    yAxisIndex: 1,
+                    data: pizzaData,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 2, color: "#f59e0b" },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: "rgba(245, 158, 11, 0.3)" },
+                            { offset: 1, color: "rgba(245, 158, 11, 0.0)" }
+                        ])
+                    },
+                    markPoint: {
+                        data: markPoints
+                    }
+                }
+            ]
+        };
+    }
 
     panicChartInstance.setOption(option, true);
 }

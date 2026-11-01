@@ -335,17 +335,45 @@ def compute_historical_pizza_series(vix_records):
     合成覆盖 1990 年至 2026 年完整 9300+ 交易日的“五角大楼披萨指数”时序。
     每个事件在发生日触发极值（80-100分），并在随后的几天根据半衰期指数衰减回基线（15-22分）。
     """
-    # 建立事件字典：date -> event
-    event_map = {m["date"]: m for m in HISTORICAL_CRISIS_MILESTONES}
-    event_dates = sorted(list(event_map.keys()))
+    trading_dates = [r[0] for r in vix_records]
+    trading_date_set = set(trading_dates)
+
+    # 预计算每个重大事件在交易日中的映射锚点 (解决非交易日/休市事件对齐问题)
+    first_td = trading_dates[0] if trading_dates else "1990-01-02"
+    first_dt = datetime.datetime.strptime(first_td, "%Y-%m-%d")
+
+    event_map = {}
+    mapped_event_lookup = {}
+
+    for m in HISTORICAL_CRISIS_MILESTONES:
+        ed_str = m["date"]
+        event_map[ed_str] = m
+        if ed_str in trading_date_set:
+            m["mapped_date"] = ed_str
+            mapped_event_lookup[ed_str] = m
+        else:
+            edt = datetime.datetime.strptime(ed_str, "%Y-%m-%d")
+            if edt <= first_dt:
+                mapped_td = first_td
+            else:
+                mapped_td = None
+                for td in trading_dates:
+                    if td >= ed_str:
+                        mapped_td = td
+                        break
+                if not mapped_td:
+                    mapped_td = trading_dates[-1]
+            m["mapped_date"] = mapped_td
+            mapped_event_lookup[mapped_td] = m
 
     series = []
     # 模拟每日披萨指数
     for row in vix_records:
         trade_date = row[0]
-        vix_close = row[4]
+        vix_open = row[1]
         vix_high = row[2]
-        vix_low = row[1]
+        vix_low = row[3]
+        vix_close = row[4]
 
         # 计算当日距离各已知重大危机的天数差与影响力辐射
         dt = datetime.datetime.strptime(trade_date, "%Y-%m-%d")
@@ -400,16 +428,20 @@ def compute_historical_pizza_series(vix_records):
             level = "NORMAL"
             level_label = "常态平稳 (DEFCON 5)"
 
+        has_ev = bool((trade_date in event_map) or (trade_date in mapped_event_lookup))
+        matched_ev = event_map.get(trade_date) or mapped_event_lookup.get(trade_date) or active_event_info
+
         series.append({
             "date": trade_date,
-            "vix_close": vix_close,
+            "vix_open": vix_open,
             "vix_high": vix_high,
             "vix_low": vix_low,
+            "vix_close": vix_close,
             "pizza_index": final_pizza,
             "level": level,
             "level_label": level_label,
-            "has_event": bool(trade_date in event_map),
-            "event_title": event_map[trade_date]["title"] if trade_date in event_map else ""
+            "has_event": has_ev,
+            "event_title": matched_ev["title"] if matched_ev else ""
         })
 
     return series

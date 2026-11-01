@@ -184,28 +184,104 @@ class TencentCollector(BaseCollector):
 
     def get_intraday_minute(self, stock_code):
         """
-        获取股票即时分时走势数据
+        获取股票即时分时走势数据（当天 1 分钟逐笔/逐分分时线）
         返回: [{"time": "09:30", "price": 1239.5, "volume": 1200, "avg_price": 1239.5}, ...]
-        优先使用新浪5分钟K线聚合日内走势
+        优先使用腾讯 1 分钟分时接口，降级使用东方财富 1 分钟分时接口，最后兜底新浪接口（且仅限当天）
         """
         raw_code = str(stock_code).lower().strip()
+        pure_code = raw_code
+        for p in ["sh", "sz", "bj"]:
+            if pure_code.startswith(p):
+                pure_code = pure_code[len(p):]
+                break
+
         if raw_code.startswith(("sh", "sz", "bj")):
-            symbol = raw_code
+            tx_symbol = raw_code
         else:
             prefix = "sh" if (raw_code.startswith("6") or raw_code.startswith("9") or raw_code.startswith("5")) else ("sz" if (raw_code.startswith("0") or raw_code.startswith("3") or raw_code.startswith("1")) else "bj")
-            symbol = f"{prefix}{raw_code}"
+            tx_symbol = f"{prefix}{raw_code}"
 
+        # 1. 优先使用腾讯官方实时 1 分钟分时接口
         try:
-            url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={symbol}&scale=5&ma=no&datalen=48"
+            url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={tx_symbol}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://gu.qq.com"}
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4) as r:
+                import json
+                resp = json.loads(r.read().decode("utf-8"))
+                st_data = resp.get("data", {}).get(tx_symbol, {})
+                raw_data = st_data.get("data", {}).get("data", [])
+                if raw_data and isinstance(raw_data, list) and len(raw_data) >= 5:
+                    minutes = []
+                    prev_cum_vol = 0
+                    for row in raw_data:
+                        parts = row.strip().split(" ")
+                        if len(parts) >= 3:
+                            t_raw = parts[0]
+                            t_str = f"{t_raw[:2]}:{t_raw[2:]}" if len(t_raw) == 4 else t_raw
+                            p = float(parts[1])
+                            cum_vol = int(float(parts[2]))
+                            cum_amt = float(parts[3]) if len(parts) > 3 else 0.0
+                            cur_vol = max(0, cum_vol - prev_cum_vol)
+                            prev_cum_vol = cum_vol
+                            avg_p = round(cum_amt / (cum_vol * 100), 2) if (cum_vol > 0 and cum_amt > 0) else p
+                            minutes.append({
+                                "time": t_str,
+                                "price": p,
+                                "volume": cur_vol,
+                                "avg_price": avg_p
+                            })
+                    if minutes:
+                        return minutes
+        except Exception as e:
+            logger.debug(f"腾讯分时接口请求异常 ({stock_code}): {e}")
+
+        # 2. 降级备用：东方财富实时 1 分钟分时接口（全市场含北交所高兼容）
+        try:
+            secid = f"1.{pure_code}" if (pure_code.startswith("6") or pure_code.startswith("9") or pure_code.startswith("5")) else f"0.{pure_code}"
+            em_url = f"https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
+            req = urllib.request.Request(em_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=4) as r:
+                import json
+                em_json = json.loads(r.read().decode("utf-8"))
+                trends = em_json.get("data", {}).get("trends", [])
+                if trends:
+                    minutes = []
+                    for line in trends:
+                        parts = line.split(",")
+                        if len(parts) >= 8:
+                            t_str = parts[0].split(" ")[-1][:5]
+                            if t_str < "09:30":
+                                continue
+                            p = float(parts[2])
+                            v = int(float(parts[5]))
+                            avg_p = float(parts[7]) if len(parts) > 7 and float(parts[7]) > 0 else p
+                            minutes.append({
+                                "time": t_str,
+                                "price": p,
+                                "volume": v,
+                                "avg_price": avg_p
+                            })
+                    if minutes:
+                        return minutes
+        except Exception as e:
+            logger.debug(f"东财分时接口降级异常 ({stock_code}): {e}")
+
+        # 3. 兜底备用：新浪日内分时（必须强制按最新当天日期过滤，严防跨日错乱）
+        try:
+            url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={tx_symbol}&scale=5&ma=no&datalen=48"
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://finance.sina.com.cn"}
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with urllib.request.urlopen(req, timeout=4) as r:
                 import json
                 raw_list = json.loads(r.read().decode("gbk"))
 
             if raw_list and isinstance(raw_list, list):
+                # 仅筛选出列表中最新的单一交易日数据，防止把昨日下午和今日早盘拼在一起
+                latest_day = raw_list[-1]["day"].split(" ")[0]
+                today_items = [it for it in raw_list if it["day"].startswith(latest_day)]
                 minutes = []
-                for it in raw_list:
+                for it in today_items:
                     t_str = it["day"].split(" ")[-1][:5]
                     p = float(it["close"])
                     v = int(float(it["volume"]) / 100.0)
@@ -218,6 +294,6 @@ class TencentCollector(BaseCollector):
                 if minutes:
                     return minutes
         except Exception as e:
-            logger.debug(f"获取分时异常 ({stock_code}): {e}")
+            logger.debug(f"新浪分时兜底异常 ({stock_code}): {e}")
 
         return []
