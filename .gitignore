@@ -20,3 +20,8 @@ scratch/
 test_raw.bin
 ashare_monitor.db
 ashare_market.db
+
+# 数据文件（体积大且频繁变动，不入库）
+ashare_data.db
+*.db-journal
+*.db-wal
